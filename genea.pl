@@ -10,13 +10,15 @@ use feature 'unicode_strings';
 # 0.8 : 28/05/18 : Early debug
 # 0.9 : 28/05/18 : première ébauche de CSV
 # 1.0 : 29/05/18 : Formalisation, constantes, correction des dates, première version versionnée
+# 1.1 : 29/05/18 : Multiple verboses, fin de cas de précision de date
+# 1.2 : 29/05/18 : Retour format CSV initial, traitement des dates révol et ajout de précision sur année, uppercase
 
 # Dependencies :
 # CPAN - DateTime::Calendar::FrenchRevolutionary
 
 ######
 
-use constant VERSION 		=> "1.1";
+use constant VERSION 		=> "1.2";
 
 # DEBUG LEVEL
 use constant { 
@@ -37,8 +39,8 @@ use Switch;
 use Text::Unidecode qw(unidecode);
 use HTML::Entities qw(decode_entities);
 
-#use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
-use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;lieu_naiss_elle;periode_décès_elle;date_décès_elle;lieu_décès_elle;métier_elle;periode_marr;date_marr;lieu_marr;nb_enfant";
+use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+#use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;lieu_naiss_elle;periode_décès_elle;date_décès_elle;lieu_décès_elle;métier_elle;periode_marr;date_marr;lieu_marr;nb_enfant";
 
 # State
 use constant ST_INTERLIGNE	=> 20;
@@ -65,7 +67,8 @@ sub add_line { # Concatenation de donnees en une ligne
 	my ($tmp_line,$alert_level,$message)=@_;
 	message ($alert_level,$message) if $message;
 	# Nettoyage du HTML
-	$line.=unidecode(decode_entities($tmp_line));
+	$line.=decode_entities($tmp_line);
+	#$line.=unidecode(decode_entities($tmp_line));
 }
 
 # Conversion URL_ENCODE vers ANSI classique
@@ -112,43 +115,75 @@ sub parse_date {
 	message  DEBUG, "| $periode ---- $date ---- $comm |";
 	message  DEBUG, "$state";
 
-	switch ($comm) { # Type de date
-		case /républicain/ {
-			#revo2greg(\$date);
-			$date="R:$date";
-		}
-		case /\(julien\)/ {
-			#revo2greg(\$date);
-			$date="J:$date";
-		}
-		case /\(hebrew\)/ {
-			#revo2greg(\$date);
-			$date="H:$date";
-		}
-		else {
-			$date="$date";
-		}
+	$date =~ s/ +$/!/; 
+	if ($date =~ /^(\d{2})-([\dA-Z]{2})-([\dXIV]+)$/) {
+		$jour=$1;
+		$mois=$2;
+		$an=$3;
+	} elsif ($date =~ /^([\dA-Z]{2})-([\dXIV]+)$/) {
+		$jour="";
+		$mois=$1;
+		$an=$2;
+	} elsif ($date =~ /^([\dXIV]+)$/) {
+		$jour="";
+		$mois="";
+		$an=$1;
 	}
+	switch ($an) {
+		case 'I' { $an=1; }
+		case 'II' { $an=2; }
+		case 'III' { $an=3; }
+		case 'IIII' { $an=4; }
+		case 'IV' { $an=4; }
+		case 'V' { $an=5; }
+		case 'VI' { $an=6; }
+		case 'VII' { $an=7; }
+		case 'VIII' { $an=8; }
+		case 'IX' { $an=9; }
+		case 'X' { $an=10; }
+		case 'XI' { $an=11; }
+		case 'XII' { $an=12; }
+		case 'XIII' { $an=13; }
+		case 'I' { $an=1; }
+	}
+
+#	switch ($comm) { # Type de date
+#		case /républicain/ {
+#			#revo2greg(\$date);
+#			$date="R:$date";
+#		}
+#		case /\(julien\)/ {
+#			#revo2greg(\$date);
+#			$date="J:$date";
+#		}
+#		case /\(hebrew\)/ {
+#			#revo2greg(\$date);
+#			$date="H:$date";
+#		}
+#		else {
+#			$date="$date";
+#		}
+#	}
+
 	switch ($periode) { # avant, après, peut-être... TODO : traductions d'autres langues
 		case /^peut-être ?$/ {
-			$date="?;$date";
+			$an="?$an";
 		}
 		case /^environ ?$/ {
-			$date="?;$date";
+			$an="/$an/";
 		}
 		case /^vers ?$/ {
-			$date="/;$date";
+			$an="/$an/";
 		}
 		case /^avant ?$/ {
-			$date="<;$date";
+			$an="/$an";
 		}
 		case /^apr.s ?$/ {
-			$date=">;$date";
+			$an="$an/";
 		}
-		else { $date=";$date"; }
 	}
-	$date =~ s/ +$/!/; 
 	message DEBUG, "| $periode ---- $date ---- $comm |";
+	$date="$jour;$mois;$an";
 	return $date;
 }
 
@@ -205,8 +240,26 @@ while (<STDIN>) {
 						$items_a{$key}=un_urlize($value);
 						message TRACE, "$key --> $value";
 					}
+					$patronyme=$2;
+					if ($patronyme =~ / <em>(.+)<\/em> /){
+						$surname=$1;
+						$items_a{n}=$';
+						$items_a{p}=$`;
+						message DEBUG,"$patronyme - $` $'";
+					}
+					if ($patronyme =~ /($items_a{n})/i) {
+						message DEBUG,"Catch : $1";
+						$items_a{n}=$1;
+					}
+					if ($patronyme =~ /($items_a{p})/i) {
+						message DEBUG,"Catch : $1";
+						$items_a{p}=$1;
+					}
 				}
 				$state=23; 
+				$items_a{n} =~ s/([\w' ]+)/\U$1/g;
+				$items_a{p} =~ s/([\w']+)/\u\L$1/g;
+				message INFO,"Resultat : P:$items_a{p} N:$items_a{n}";
 			}
 		}
 		case 23 { # DATE naiss
@@ -232,7 +285,26 @@ while (<STDIN>) {
 						$items_b{$key}=un_urlize($value);
 						message TRACE, "$key --> $value";
 					}
+					$patronyme=$2;
+					if ($patronyme =~ / <em>(.+)<\/em> /){
+						$surname=$1;
+						$items_b{n}=$';
+						$items_b{p}=$`;
+						message DEBUG,"$patronyme - $` $'";
+					}
+					if ($patronyme =~ /($items_a{n})/i) {
+						message DEBUG,"Catch : $1";
+						$items_b{n}=$1;
+					}
+					if ($patronyme =~ /($items_a{p})/i) {
+						message DEBUG,"Catch : $1";
+						$items_b{p}=$1;
+					}
 				}
+				$state=23; 
+				$items_b{n} =~ s/([\w' ]+)/\U$1/g;
+				$items_b{p} =~ s/([\w']+)/\u\L$1/g;
+				message INFO,"Resultat : P:$items_b{p} N:$items_b{n}";
 				$state=26; 
 			}
 		}
@@ -294,7 +366,7 @@ while (<STDIN>) {
 			$line="";
 			message INFO,"====================";
 			add_line $sosa.';',INFO,"=== $sosa ===";
-			message DEBUG,"# prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;";
+			message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
 			foreach $k (p, n) {
 				add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};
 			}
@@ -306,16 +378,16 @@ while (<STDIN>) {
 			add_line "$ld;";
 			add_line "$prof;";
 
-			message DEBUG,"# prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;";
+			message DEBUG,"# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;an_naiss_elle;";
 			foreach $k (p, n) {
 				add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
 			}
-			add_line ";";
+			add_line ";;;";
 
 			message DEBUG, "# lieu_naiss_elle;";
 			add_line ";";
 
-			message DEBUG, "# periode_décès_elle;date_décès_elle;lieu_décès_elle;";
+			message DEBUG, "# jour_décès_elle;mois_décès_elle;an_décès_elle;lieu_décès_elle;";
 			add_line ";;;;";
 
 			message DEBUG,"# métier_elle";
