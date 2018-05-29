@@ -1,12 +1,7 @@
 #!/usr/bin/perl
 
-use constant VERSION 		=> "1.0";
-use constant DEBUG 		=> 0;
-
 use utf8;
 use open ':std', ':encoding(UTF-8)';
-use Switch;
-#use DateTime::Calendar::FrenchRevolutionary;
 use feature 'unicode_strings';
 
 ## License : GPL
@@ -19,17 +14,65 @@ use feature 'unicode_strings';
 # Dependencies :
 # CPAN - DateTime::Calendar::FrenchRevolutionary
 
-use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+######
 
+use constant VERSION 		=> "1.1";
+
+# DEBUG LEVEL
+use constant { 
+	TRACE	=> 5,
+	DEBUG	=> 4,
+	INFO	=> 3,
+	WARN	=> 2,
+	ERR	=> 1,
+	CRIT	=> 0
+};
+
+$DEBUG_LEVEL=CRIT;
+
+use constant LEVEL => [ qw/CRIT ERR WARN INFO DEBUG TRACE/ ];
+
+use Switch;
+#use DateTime::Calendar::FrenchRevolutionary;
+use Text::Unidecode qw(unidecode);
+use HTML::Entities qw(decode_entities);
+
+#use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;lieu_naiss_elle;periode_décès_elle;date_décès_elle;lieu_décès_elle;métier_elle;periode_marr;date_marr;lieu_marr;nb_enfant";
+
+# State
 use constant ST_INTERLIGNE	=> 20;
 use constant ST_AFF 		=> 30;
+
+# Globales
+my @lines; # contient les données à afficher
+my $line;  # contient les données à afficher
+
+my $state=0;
+foreach $opt (@ARGV){
+	switch ($state) {
+		case 0 { $state=2 if $opt eq "-v"}
+		case 2 { $state=0; $DEBUG_LEVEL=$opt}
+	}
+}
+
+sub message {
+	my ($alert_level,$message)=@_;
+	print STDERR LEVEL->[$alert_level]." $alert_level: $message\n" if $DEBUG_LEVEL >= $alert_level;
+}
+
+sub add_line { # Concatenation de donnees en une ligne
+	my ($tmp_line,$alert_level,$message)=@_;
+	message ($alert_level,$message) if $message;
+	# Nettoyage du HTML
+	$line.=unidecode(decode_entities($tmp_line));
+}
 
 # Conversion URL_ENCODE vers ANSI classique
 sub un_urlize {
 	my ($rv) = @_;
 	$rv =~ s/\+/ /g;
 	$rv =~ s/%(..)/pack("c",hex($1))/ge;
-	$rv =~ s/&nbsp;/ /g;
 	return $rv;
 }
 
@@ -41,7 +84,6 @@ sub revo2greg {
 sub parse_date {
 	my ($date_in) = @_;	
 	my $date;
-	$date_in =~ s/&nbsp;/ /g;
 	if ($date_in =~ / ([^ ]+\/[^ ]+) /) {
 		$periode=$`;
 		$date=$1;
@@ -65,10 +107,12 @@ sub parse_date {
 	else {
 		$date = $date_in;
 	}
+	# Remplacement des / en -
 	$date =~ s/\//-/g;
-	print "| $periode ---- $date ---- $comm |\n" if DEBUG;
+	message  DEBUG, "| $periode ---- $date ---- $comm |";
+	message  DEBUG, "$state";
 
-	switch ($comm) {
+	switch ($comm) { # Type de date
 		case /républicain/ {
 			#revo2greg(\$date);
 			$date="R:$date";
@@ -85,7 +129,7 @@ sub parse_date {
 			$date="$date";
 		}
 	}
-	switch ($periode) {
+	switch ($periode) { # avant, après, peut-être... TODO : traductions d'autres langues
 		case /^peut-être ?$/ {
 			$date="?;$date";
 		}
@@ -103,19 +147,21 @@ sub parse_date {
 		}
 		else { $date=";$date"; }
 	}
-	$date =~ s/ +$//;
-	print "| $periode ---- $date ---- $comm |\n" if DEBUG;
+	$date =~ s/ +$/!/; 
+	message DEBUG, "| $periode ---- $date ---- $comm |";
 	return $date;
 }
 
 my $state=0;
 
 # Entête
-print "# <GeneaParse v".VERSION.">\n";
-print FORMAT;
+push @lines,"# <GeneaParse v".VERSION.">";
+push @lines,FORMAT;
 
 while (<STDIN>) {
-#	print "$state $_";
+	print "$state $_" if DEBUG_LEVEL >= TRACE;
+	# s/&nbsp;/ /g;
+
 	switch ($state) {
 		case 0 {
 			if (/^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
@@ -130,7 +176,7 @@ while (<STDIN>) {
 			if (/^<\/tr>/) { $state=ST_INTERLIGNE; }
 		}
 		case ST_INTERLIGNE { # Interligne
-			#print "======\n";
+			message TRACE,"======\n";
 			if (/^<tr>/) { 
 				$state=21; 
 				%items_a={};
@@ -144,7 +190,7 @@ while (<STDIN>) {
 		case 21 { # SOSA
 			if (/^<td[^>]*>(.+)<\/td>/) {
 				$sosa=un_urlize($1);
-				$sosa =~ s/ //g;
+				$sosa =~ s/(&nbsp;| )//g;
 				$state=22;
 			}
 			#print "====$sosa====\n"
@@ -154,10 +200,10 @@ while (<STDIN>) {
 				$datas=$1;
 				if ($datas =~ (/<a href=".+\?(.+)">(.*)<\/a>/)) {
 					$url=$1;
-				foreach $item (split /&/, $url) {
+					foreach $item (split /&/, $url) {
 						($key,$value)=split "=",$item;
 						$items_a{$key}=un_urlize($value);
-						#print "$key --> $value\n";
+						message TRACE, "$key --> $value";
 					}
 				}
 				$state=23; 
@@ -184,7 +230,7 @@ while (<STDIN>) {
 					foreach $item (split /&/, $url) {
 						($key,$value)=split "=",$item;
 						$items_b{$key}=un_urlize($value);
-						#print "$key --> $value\n";
+						message TRACE, "$key --> $value";
 					}
 				}
 				$state=26; 
@@ -245,42 +291,51 @@ while (<STDIN>) {
 			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
 			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
 			# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
-			print "=============\n= " if DEBUG;
-			print "$sosa;";
-			print " =\n# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;\n" if DEBUG;
+			$line="";
+			message INFO,"====================";
+			add_line $sosa.';',INFO,"=== $sosa ===";
+			message DEBUG,"# prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;";
 			foreach $k (p, n) {
-				print "$items_a{$k};"
+				add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};
 			}
-			print parse_date($dn).";";
-			print "$ln;";
+			add_line parse_date($dn).";",DEBUG,"dn:$dn";
+			add_line "$ln;",DEBUG,"ln:$ln";
 
-			print "\n# jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;\n" if DEBUG;
-			print parse_date($dd).";";
-			print "$ld;";
-			print "$prof;";
+			message DEBUG,"# periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;";
+			add_line parse_date($dd).";",DEBUG,"dd:$dd";
+			add_line "$ld;";
+			add_line "$prof;";
 
-			print "\n# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;\n" if DEBUG;
+			message DEBUG,"# prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;";
 			foreach $k (p, n) {
-				print "$items_b{$k};"
+				add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
 			}
-			print ";;;;";
+			add_line ";";
 
-			print "\n# lieu_naiss_elle; \n" if DEBUG; 
-			print ";";
+			message DEBUG, "# lieu_naiss_elle;";
+			add_line ";";
 
-			print "\n# jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle; \n" if DEBUG;
-			print ";;;;";
+			message DEBUG, "# periode_décès_elle;date_décès_elle;lieu_décès_elle;";
+			add_line ";;;;";
 
-			print "\n# métier_elle; \n" if DEBUG;
-			print ";";
+			message DEBUG,"# métier_elle";
+			add_line ";";
 
-			print "\n# jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant \n" if DEBUG;
-			print parse_date($dm).";";
-			print "$lm;";
-			print "$nbe\n";
+			message DEBUG, "# jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+			message DEBUG, "$dm;$lm;$nbe";
+			add_line parse_date($dm).";";
+			add_line "$lm;";
+			add_line "$nbe";
+
+			push @lines,$line;
+			message DEBUG,$line;
+
 			if (/^<tr>/) { $state=21; } else { $state=ST_INTERLIGNE }
 		}
 	}	
-$_="";
 
+}
+
+foreach (@lines) {
+	print "$_\n";
 }
