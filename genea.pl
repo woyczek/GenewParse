@@ -4,7 +4,7 @@ use 5.010;
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 use feature 'unicode_strings';
-use warnings;
+#use warnings;
 
 ## License : GPL
 
@@ -17,6 +17,7 @@ use warnings;
 #                : ajout de précision sur année, uppercase ; recupération des diacritiques.
 # 1.3 : 30/05/18 : Suppression du module Switch - switch limit - help page - debug dates & accents
 #                : Fix bug de logique sur les majuscules des prénoms - recombinaison compatible forme combinée unicode
+# 1.4 : 30/05/18 : Ajout affichage en forme d'arbre
 
 # Dependencies :
 # CPAN - Text::Unidecode qw(unidecode);
@@ -25,7 +26,7 @@ use warnings;
 
 ######
 
-use constant VERSION 		=> "1.3";
+use constant VERSION 		=> "1.4";
 
 # DEBUG LEVEL
 use constant { 
@@ -59,11 +60,16 @@ use constant ST_DATE_DECES	=> 29;
 # Globales
 my $state=0;
 my @lines; # contient les données à afficher
+my %lines; # contient les données à afficher
 my $line;  # contient les données à afficher
+my $last_sosa=0;
+
 my $SW_LIMIT=0;
 my $SW_DEBUG=0;
+my $SW_TREE=0;
 my $SOSA_LIMIT=0;
 my $DEBUG_LEVEL=CRIT;
+my $TREE_LIMIT=0;
 
 
 sub message { # Affichage d'un message selon verbosité
@@ -257,12 +263,57 @@ sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètre
 	return ($prenom,$nom,$surname);
 }
 
+my %GENERATION = qw( 1  1
+	2  2
+	4  3
+	8  4
+	16  5
+	32  6
+	64  7
+	128  8
+	256  9
+	512  10
+	1024  11
+	2048  12
+	4096  13
+	8182  14
+      );
+
+sub get_gen {
+	my ($sosa)=@_;
+	my $msb=(($sosa | ($sosa >> 1) | ($sosa >> 2) | ($sosa >> 4) | ($sosa >> 8) | ($sosa >> 16) | ($sosa >> 32)) >> 1)  + 1;
+	message DEBUG,"$sosa -> $msb -> $GENERATION{$msb}";
+	return $GENERATION{$msb};
+}
+
+
+sub print_sosa {
+	my ($sosa,$max_sosa)=@_;
+	if ($sosa<$max_sosa) {
+		my $gen=get_gen($sosa);
+		if ($lines{$sosa} && $gen<=$TREE_LIMIT) {
+			message TRACE, "$sosa - ".$gen;
+			foreach $ref (@{$lines{$sosa}}) {
+				printf "Gen %3s: %s\n",$gen,$lines[$ref];
+			}
+		} else {
+			message DEBUG, "$sosa - ".get_gen($sosa)."XX";
+		}
+		#print " " x get_gen($sosa) . $sosa."\n";
+		print_sosa($sosa*2,$max_sosa);
+		print_sosa($sosa*2+1,$max_sosa);
+	} else {
+		return
+	}
+}
+
 sub show_help {
 	print "
 Usage :
 genea.pl [-v <LEVEL>] [-l <SOSA>] [-h|-?]
 	-v <LEVEL> : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
 	-l <SOSA>  : ne traite que le sosa <SOSA>
+	-t <LEVEL> : affiche sous forme d'arbre, niveau <LEVEL> maximal
 ";
 	exit;
 }
@@ -274,6 +325,7 @@ foreach my $opt (@ARGV){
 		when (0) { 
 			$state=2 if $opt eq "-v";
 			$state=4 if $opt eq "-l";
+			$state=6 if $opt eq "-t";
 			show_help if $opt eq "-?";
 			show_help if $opt eq "-h";
 			show_help if $state == 0;	
@@ -288,6 +340,11 @@ foreach my $opt (@ARGV){
 			$SW_LIMIT=1;
 			$SOSA_LIMIT=$opt;
 		}
+		when (6) { 
+			$state=0;
+			$SW_TREE=1;
+			$TREE_LIMIT=$opt;
+		}
 	}
 }
 
@@ -297,7 +354,6 @@ message DEBUG, "Options : $SW_LIMIT : $SOSA_LIMIT - $SW_DEBUG : $DEBUG_LEVEL";
 
 
 # Entête
-push @lines,"# <GeneaParse v".VERSION.">";
 push @lines,FORMAT;
 
 foreach my $li (<STDIN>) {
@@ -337,6 +393,7 @@ foreach my $li (<STDIN>) {
 			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
 				$sosa=un_urlize($1);
 				$sosa =~ s/(&nbsp;| )//g;
+				$last_sosa = $sosa if ($sosa > $last_sosa);
 				$state=22;
 				message INFO,"==== $sosa ====";
 			}
@@ -435,48 +492,62 @@ foreach my $li (<STDIN>) {
 		}
 
 
-		when (ST_AFF) { # CSV
-			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
-			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
-			# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
-			$line="";
-			add_line $sosa.";";
-			message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
-			foreach $k ('p', 'n') {
-				add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};
+		when (ST_AFF) { 
+			if ($SW_TREE) { # Arbre ##########
+				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
+				# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
+				$line="";
+				my $level=$sosa / 2;
+				add_line " " x get_gen($sosa) x 2 . " - $sosa - ";
+				add_line "$items_a{n} $items_a{p} ($dn à $ln / $dd à $ld) - $prof - $nbe enfants.";
+
+				$line =~s/;\s+;/;;/g;
+				push @lines,$line;
+				push @{$lines{$sosa}},$#lines;
+				message DEBUG,$line;
+			} else { # CSV ##############
+				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
+				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
+				# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
+				$line="";
+				add_line $sosa.";";
+				message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
+				foreach $k ('p', 'n') {
+					add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};
+				}
+				add_line parse_date($dn).";",DEBUG,"dn:$dn";
+				add_line "$ln;",DEBUG,"ln:$ln";
+
+				message DEBUG,"# periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;";
+				add_line parse_date($dd).";",DEBUG,"dd:$dd";
+				add_line "$ld;";
+				add_line "$prof;";
+
+				message DEBUG,"# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;an_naiss_elle;";
+				foreach $k ('p', 'n') {
+					add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
+				}
+				add_line ";;;";
+
+				message DEBUG, "# lieu_naiss_elle;";
+				add_line ";";
+
+				message DEBUG, "# jour_décès_elle;mois_décès_elle;an_décès_elle;lieu_décès_elle;";
+				add_line ";;;;";
+
+				message DEBUG,"# métier_elle";
+				add_line ";";
+
+				message DEBUG, "# jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+				message DEBUG, "$dm;$lm;$nbe";
+				add_line parse_date($dm).";";
+				add_line "$lm;";
+				add_line "$nbe";
+
+				$line =~s/;\s+;/;;/g;
+				push @lines,$line;
+				message DEBUG,$line;
 			}
-			add_line parse_date($dn).";",DEBUG,"dn:$dn";
-			add_line "$ln;",DEBUG,"ln:$ln";
-
-			message DEBUG,"# periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;";
-			add_line parse_date($dd).";",DEBUG,"dd:$dd";
-			add_line "$ld;";
-			add_line "$prof;";
-
-			message DEBUG,"# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;an_naiss_elle;";
-			foreach $k ('p', 'n') {
-				add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
-			}
-			add_line ";;;";
-
-			message DEBUG, "# lieu_naiss_elle;";
-			add_line ";";
-
-			message DEBUG, "# jour_décès_elle;mois_décès_elle;an_décès_elle;lieu_décès_elle;";
-			add_line ";;;;";
-
-			message DEBUG,"# métier_elle";
-			add_line ";";
-
-			message DEBUG, "# jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
-			message DEBUG, "$dm;$lm;$nbe";
-			add_line parse_date($dm).";";
-			add_line "$lm;";
-			add_line "$nbe";
-
-			$line =~s/;\s+;/;;/g;
-			push @lines,$line;
-			message DEBUG,$line;
 
 			if (/^<tr>/) { $state=201; } else { $state=ST_INTERLIGNE }
 		}
@@ -484,6 +555,17 @@ foreach my $li (<STDIN>) {
 
 }
 
-foreach (@lines) {
-	print "$_\n";
+if ($SW_TREE) {
+	message WARN,"==== ARBRE - $last_sosa";
+
+	print "Affichage de l'arbre ascendant par SOSA (generation max : $TREE_LIMIT)\n";
+	print "------------------------------------------------------------------\n";
+	print_sosa(1,$last_sosa);
+} else {
+	message WARN,"==== LINE";
+	unshift @lines,"# <GeneaParse v".VERSION.">";
+	foreach (@lines) {
+		print "$_\n";
+		#message INFO,"$_";
+	}
 }
