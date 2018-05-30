@@ -1,8 +1,10 @@
 #!/usr/bin/perl
 
+use 5.010;
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 use feature 'unicode_strings';
+use warnings;
 
 ## License : GPL
 
@@ -11,17 +13,22 @@ use feature 'unicode_strings';
 # 0.9 : 28/05/18 : première ébauche de CSV
 # 1.0 : 29/05/18 : Formalisation, constantes, correction des dates, première version versionnée
 # 1.1 : 29/05/18 : Multiple verboses, fin de cas de précision de date
-# 1.2 : 29/05/18 : Retour format CSV initial, traitement des dates révol et ajout de précision sur année, uppercase
+# 1.2 : 29/05/18 : Retour format CSV initial, traitement des dates révolutionnaire
+#                : ajout de précision sur année, uppercase ; recupération des diacritiques.
+# 1.3 : 30/05/18 : Suppression du module Switch - switch limit - help page - debug dates & accents
 
 # Dependencies :
-# CPAN - DateTime::Calendar::FrenchRevolutionary
+# CPAN - Text::Unidecode qw(unidecode);
+#      - HTML::Entities qw(decode_entities);
+#      - Unicode::Normalize;
 
 ######
 
-use constant VERSION 		=> "1.2";
+use constant VERSION 		=> "1.3";
 
 # DEBUG LEVEL
 use constant { 
+	XTRACE	=> 6,
 	TRACE	=> 5,
 	DEBUG	=> 4,
 	INFO	=> 3,
@@ -30,14 +37,13 @@ use constant {
 	CRIT	=> 0
 };
 
-$DEBUG_LEVEL=CRIT;
+use constant LEVEL => [ qw/CRIT ERR WARN INFO DEBUG TRACE XTRACE XXTRACE XXXTRACE/ ];
 
-use constant LEVEL => [ qw/CRIT ERR WARN INFO DEBUG TRACE/ ];
-
-use Switch;
+#use Switch; # deprecated
 #use DateTime::Calendar::FrenchRevolutionary;
 use Text::Unidecode qw(unidecode);
 use HTML::Entities qw(decode_entities);
+use Unicode::Normalize;
 
 use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
 #use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;lieu_naiss_elle;periode_décès_elle;date_décès_elle;lieu_décès_elle;métier_elle;periode_marr;date_marr;lieu_marr;nb_enfant";
@@ -45,18 +51,20 @@ use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;
 # State
 use constant ST_INTERLIGNE	=> 20;
 use constant ST_AFF 		=> 30;
+use constant ST_DATE_NAISS	=> 23;
+use constant ST_DATE_MARIAGE	=> 26;
+use constant ST_DATE_DECES	=> 29;
 
 # Globales
+my $state=0;
 my @lines; # contient les données à afficher
 my $line;  # contient les données à afficher
+my $SW_LIMIT=0;
+my $SW_DEBUG=0;
+my $SOSA_LIMIT=0;
+my $DEBUG_LEVEL=CRIT;
 
-my $state=0;
-foreach $opt (@ARGV){
-	switch ($state) {
-		case 0 { $state=2 if $opt eq "-v"}
-		case 2 { $state=0; $DEBUG_LEVEL=$opt}
-	}
-}
+
 
 sub message {
 	my ($alert_level,$message)=@_;
@@ -86,7 +94,10 @@ sub revo2greg {
 # Conversion URL_ENCODE vers ANSI classique
 sub parse_date {
 	my ($date_in) = @_;	
-	my $date;
+	my $date='';
+	my $periode=''; my $comm='';
+	my $jour='';my $mois='';my $an='';
+
 	if ($date_in =~ / ([^ ]+\/[^ ]+) /) {
 		$periode=$`;
 		$date=$1;
@@ -129,22 +140,22 @@ sub parse_date {
 		$mois="";
 		$an=$1;
 	}
-	switch ($an) {
-		case 'I' { $an=1; }
-		case 'II' { $an=2; }
-		case 'III' { $an=3; }
-		case 'IIII' { $an=4; }
-		case 'IV' { $an=4; }
-		case 'V' { $an=5; }
-		case 'VI' { $an=6; }
-		case 'VII' { $an=7; }
-		case 'VIII' { $an=8; }
-		case 'IX' { $an=9; }
-		case 'X' { $an=10; }
-		case 'XI' { $an=11; }
-		case 'XII' { $an=12; }
-		case 'XIII' { $an=13; }
-		case 'I' { $an=1; }
+	given ($an) {
+		when ('I') { $an=1; }
+		when ('II') { $an=2; }
+		when ('III') { $an=3; }
+		when ('IIII') { $an=4; }
+		when ('IV') { $an=4; }
+		when ('V') { $an=5; }
+		when ('VI') { $an=6; }
+		when ('VII') { $an=7; }
+		when ('VIII') { $an=8; }
+		when ('IX') { $an=9; }
+		when ('X') { $an=10; }
+		when ('XI') { $an=11; }
+		when ('XII') { $an=12; }
+		when ('XIII') { $an=13; }
+		when ('I') { $an=1; }
 	}
 
 #	switch ($comm) { # Type de date
@@ -165,20 +176,20 @@ sub parse_date {
 #		}
 #	}
 
-	switch ($periode) { # avant, après, peut-être... TODO : traductions d'autres langues
-		case /^peut-être ?$/ {
+	given ($periode) { # avant, après, peut-être... TODO : traductions d'autres langues
+		when (/^peut-être ?$/) {
 			$an="?$an";
 		}
-		case /^environ ?$/ {
+		when (/^environ ?$/) {
 			$an="/$an/";
 		}
-		case /^vers ?$/ {
+		when (/^vers ?$/) {
 			$an="/$an/";
 		}
-		case /^avant ?$/ {
+		when (/^avant ?$/) {
 			$an="/$an";
 		}
-		case /^apr.s ?$/ {
+		when (/^apr.s ?$/) {
 			$an="$an/";
 		}
 	}
@@ -187,187 +198,238 @@ sub parse_date {
 	return $date;
 }
 
-my $state=0;
+sub parse_patronyme {
+	my ($url,$patronyme)=@_;
+	my $prenom="",$nom="",$surname="";
+	my %items;
+	foreach $item (split /&/, $url) {
+		($key,$value)=split "=",$item;
+		$items{$key}=un_urlize($value);
+		message TRACE, "$key --> $value";
+	}
+	$prenom=$items{p};
+	$nom=$items{n};
+	message TRACE,"PP:$patronyme:$prenom:$nom:";
+	if ($patronyme =~ / <em>(.+)<\/em> /){
+		$surname=$1;
+		message DEBUG,"$patronyme - $` $'";
+	}
+	$tmp_patro = NFD(lc($patronyme)); 
+	message TRACE,"PP:$patronyme:$tmp_patro:";
+	if ($tmp_patro =~ s/\pM//g) {
+		$tmp_patro =~ s/['-]/ /g;
+		message DEBUG,"Accents detectes. $tmp_patro";
+		$tmp = NFD(lc($nom));
+		message DEBUG,"LC CHECK $tmp";
+		if ($tmp =~ /^[\p{L}' -]+$/) {
+			$index=index($tmp_patro,$tmp);
+			message INFO,"Catch : $tmp ($index)";
+			message TRACE,"PP:$tmp_patro:$tmp:$index!";
+			message TRACE,"PP:$patronyme:$index:".length($tmp)."!";
+			$nom=substr($patronyme,$index,length($tmp));
+		}
+		$tmp = NFD(lc($prenom));
+		message DEBUG,"LC CHECK $tmp";
+		if ($tmp =~ /^[\p{L}' -]+$/) {
+			$index=index($tmp_patro,$tmp);
+			message INFO,"Catch : $tmp ($index)";
+			message TRACE,"PP:$tmp_patro:$tmp:$index!";
+			message TRACE,"PP:$patronyme:$index!".length($tmp);
+			$prenom=substr($patronyme,$index,length($tmp));
+		}
+	}
+	message TRACE,"PP:$nom:$prenom:";
+	$nom =~ s/([\w' -]+)/\U$1/g;
+	$prenom =~ s/([\w'-]+)/\u\L$1/g;
+	message INFO,"Resultat : P:$prenom N:$nom";
+	return ($prenom,$nom,$surname);
+}
+
+sub show_help {
+	print "
+Usage :
+genea.pl [-v <LEVEL>] [-l <SOSA>] [-h|-?]
+	-v <LEVEL> : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
+	-l <SOSA>  : ne traite que le sosa <SOSA>
+";
+	exit;
+}
+
+###########################################################################
+
+foreach my $opt (@ARGV){
+	given ($state) {
+		when (0) { 
+			$state=2 if $opt eq "-v";
+			$state=4 if $opt eq "-l";
+			show_help if $opt eq "-?";
+			show_help if $opt eq "-h";
+			show_help if $state == 0;	
+		}
+		when (2) { 
+			$state=0; 
+			$DEBUG_LEVEL=$opt;
+			$SW_DEBUG=1;
+		}
+		when (4) { 
+			$state=0; 
+			$SW_LIMIT=1;
+			$SOSA_LIMIT=$opt;
+		}
+	}
+}
+
+$state=0;
+
+message DEBUG, "Options : $SW_LIMIT : $SOSA_LIMIT - $SW_DEBUG : $DEBUG_LEVEL";
+
 
 # Entête
 push @lines,"# <GeneaParse v".VERSION.">";
 push @lines,FORMAT;
 
-while (<STDIN>) {
-	print "$state $_" if DEBUG_LEVEL >= TRACE;
+foreach my $li (<STDIN>) {
+	chomp $li;
+	message XTRACE, "$state:$li!";
 	# s/&nbsp;/ /g;
 
-	switch ($state) {
-		case 0 {
-			if (/^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
+	given ($state) {
+		when (0) {
+			if ($li =~ /^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
 				$root_sosa=$1;
 				$state=1;
 			}
+			message TRACE,"-- $state";
 		}
-		case 1 {
-			if (/^<tbody>/) { $state=2; }
+		when (1) {
+			if ($li =~ /^<tbody>/) { $state=2; }
+			message TRACE,"-- $state";
 		}
-		case 2 {
-			if (/^<\/tr>/) { $state=ST_INTERLIGNE; }
+		when (2) {
+			if ($li =~ /^<\/tr>/) { $state=ST_INTERLIGNE; }
 		}
-		case ST_INTERLIGNE { # Interligne
-			message TRACE,"======\n";
-			if (/^<tr>/) { 
-				$state=21; 
-				%items_a={};
-				%items_b={};
+		when (ST_INTERLIGNE) { # Interligne
+			message INFO,"====================";
+			if ($li =~ /^<tr>/) { 
+				$state=201; 
+				%items_a=();
+				%items_b=();
 			}
-			if (/^<tr dontbreak="1">/) {  # suite d'un mariage multiple
-				$state=25; 
-				%items_b={};
+			if ($li =~ /^<tr dontbreak="1">/) {  # suite d'un mariage multiple
+				$state=205; 
+				%items_b=();
 			}
+			message TRACE,"-- $state";
 		}
-		case 21 { # SOSA
-			if (/^<td[^>]*>(.+)<\/td>/) {
+		when (201) { # SOSA
+			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
 				$sosa=un_urlize($1);
 				$sosa =~ s/(&nbsp;| )//g;
 				$state=22;
+				message INFO,"==== $sosa ====";
 			}
-			#print "====$sosa====\n"
+			chomp;
+			message TRACE,"-- $state $_";
 		}
-		case 22 { # Principal
-			if (/^<td[^>]*>(.+)<\/td>/) {
+		when (22) { # Principal
+			$state=ST_INTERLIGNE if ($li =~ /^<\/tr>/);
+			next if ($SW_LIMIT and $SOSA_LIMIT!=$sosa);
+			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
 				$datas=$1;
 				if ($datas =~ (/<a href=".+\?(.+)">(.*)<\/a>/)) {
-					$url=$1;
-					foreach $item (split /&/, $url) {
-						($key,$value)=split "=",$item;
-						$items_a{$key}=un_urlize($value);
-						message TRACE, "$key --> $value";
-					}
-					$patronyme=$2;
-					if ($patronyme =~ / <em>(.+)<\/em> /){
-						$surname=$1;
-						$items_a{n}=$';
-						$items_a{p}=$`;
-						message DEBUG,"$patronyme - $` $'";
-					}
-					if ($patronyme =~ /($items_a{n})/i) {
-						message DEBUG,"Catch : $1";
-						$items_a{n}=$1;
-					}
-					if ($patronyme =~ /($items_a{p})/i) {
-						message DEBUG,"Catch : $1";
-						$items_a{p}=$1;
-					}
+					($items_a{p},$items_a{n},$tmp)=parse_patronyme($1,$2);
 				}
-				$state=23; 
-				$items_a{n} =~ s/([\w' ]+)/\U$1/g;
-				$items_a{p} =~ s/([\w']+)/\u\L$1/g;
-				message INFO,"Resultat : P:$items_a{p} N:$items_a{n}";
+				$state=ST_DATE_NAISS; 
+				message TRACE,"-- $state Items n/p : $1 $2";
 			}
 		}
-		case 23 { # DATE naiss
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (ST_DATE_NAISS) { # DATE naiss
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
+				message DEBUG,"Naissance:$1";
 				$dn=$1;
 				$state=24;
 			}
 		}
-		case 24 { # Lieu naiss
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (24) { # Lieu naiss
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$ln=$1;
-				$state=25;
+				$state=205;
 			}
 		}
-		case 25 { # Second membre du couple
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (205) { # Second membre du couple
+			$state=ST_INTERLIGNE if ($li =~ /^<\/tr>/ and $SOSA_LIMIT!=$sosa);
+			next if ($SW_LIMIT and $SOSA_LIMIT!=$sosa);
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$datas=$1;
 				if ($datas =~ (/<a href=".+\?(.+)">(.*)<\/a>/)) {
-					$url=$1;
-					foreach $item (split /&/, $url) {
-						($key,$value)=split "=",$item;
-						$items_b{$key}=un_urlize($value);
-						message TRACE, "$key --> $value";
-					}
-					$patronyme=$2;
-					if ($patronyme =~ / <em>(.+)<\/em> /){
-						$surname=$1;
-						$items_b{n}=$';
-						$items_b{p}=$`;
-						message DEBUG,"$patronyme - $` $'";
-					}
-					if ($patronyme =~ /($items_a{n})/i) {
-						message DEBUG,"Catch : $1";
-						$items_b{n}=$1;
-					}
-					if ($patronyme =~ /($items_a{p})/i) {
-						message DEBUG,"Catch : $1";
-						$items_b{p}=$1;
-					}
+					($items_b{p},$items_b{n},$tmp)=parse_patronyme($1,$2)
 				}
-				$state=23; 
-				$items_b{n} =~ s/([\w' ]+)/\U$1/g;
-				$items_b{p} =~ s/([\w']+)/\u\L$1/g;
-				message INFO,"Resultat : P:$items_b{p} N:$items_b{n}";
-				$state=26; 
+				$state=ST_DATE_MARIAGE; 
+				message TRACE,"-- $state $datas";
 			}
 		}
-		case 26 { # DATE mariage
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (ST_DATE_MARIAGE) { # DATE mariage
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
+				message DEBUG,"Mariage:$1";
 				$dm=$1;
 				$state=27;
 			}
 		}
-		case 27 { # Lieu naissB
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (27) { # Lieu naissB
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$lm=$1;
 				$state=28;
 			}
 		}
-		case 28 { # NB enfants
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (28) { # NB enfants
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$nbe=$1;
-				$state=29;
+				$state=ST_DATE_DECES;
 			}
 		}
-		case 29 { # date deces
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (ST_DATE_DECES) { # date deces
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
+				message DEBUG,"Deces:$1";
 				$dd=$1;
 				$state=290;
 			}
 		}
-		case 290 { # Lieu deces
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (290) { # Lieu deces
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$ld=$1;
 				$state=291;
 			}
 		}
-		case 291 { # Age
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (291) { # Age
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$age=$1;
 				$state=292;
 			}
 		}
-		case 292 { # Prof
-			if (/^<\/tr>/) { $state=ST_AFF; }
-			if (/^<td[^>]*>(.*)<\/td>/) {
+		when (292) { # Prof
+			$state=ST_AFF if ($li =~ /^<\/tr>/);
+			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
 				$prof=$1;
 				$state=ST_AFF;
 			}
 		}
 
 
-		case ST_AFF { # CSV
+		when (ST_AFF) { # CSV
 			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
 			# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
 			# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
 			$line="";
-			message INFO,"====================";
-			add_line $sosa.';',INFO,"=== $sosa ===";
+			add_line $sosa.";";
 			message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
-			foreach $k (p, n) {
+			foreach $k ('p', 'n') {
 				add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};
 			}
 			add_line parse_date($dn).";",DEBUG,"dn:$dn";
@@ -379,7 +441,7 @@ while (<STDIN>) {
 			add_line "$prof;";
 
 			message DEBUG,"# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;an_naiss_elle;";
-			foreach $k (p, n) {
+			foreach $k ('p', 'n') {
 				add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
 			}
 			add_line ";;;";
@@ -402,9 +464,9 @@ while (<STDIN>) {
 			push @lines,$line;
 			message DEBUG,$line;
 
-			if (/^<tr>/) { $state=21; } else { $state=ST_INTERLIGNE }
+			if (/^<tr>/) { $state=201; } else { $state=ST_INTERLIGNE }
 		}
-	}	
+	};
 
 }
 
