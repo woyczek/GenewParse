@@ -16,6 +16,7 @@ use warnings;
 # 1.2 : 29/05/18 : Retour format CSV initial, traitement des dates révolutionnaire
 #                : ajout de précision sur année, uppercase ; recupération des diacritiques.
 # 1.3 : 30/05/18 : Suppression du module Switch - switch limit - help page - debug dates & accents
+#                : Fix bug de logique sur les majuscules des prénoms - recombinaison compatible forme combinée unicode
 
 # Dependencies :
 # CPAN - Text::Unidecode qw(unidecode);
@@ -65,13 +66,12 @@ my $SOSA_LIMIT=0;
 my $DEBUG_LEVEL=CRIT;
 
 
-
-sub message {
+sub message { # Affichage d'un message selon verbosité
 	my ($alert_level,$message)=@_;
 	print STDERR LEVEL->[$alert_level]." $alert_level: $message\n" if $DEBUG_LEVEL >= $alert_level;
 }
 
-sub add_line { # Concatenation de donnees en une ligne
+sub add_line { # Concatenation de donnees en une ligne (vers CSV)
 	my ($tmp_line,$alert_level,$message)=@_;
 	message ($alert_level,$message) if $message;
 	# Nettoyage du HTML
@@ -87,11 +87,11 @@ sub un_urlize {
 	return $rv;
 }
 
-sub revo2greg {
+sub revo2greg { # To be written
 	my ($date)=@_;
 }
 
-# Conversion URL_ENCODE vers ANSI classique
+# Conversion URL_ENCODE vers ANSI classique, nettoyage, découpage jj;mm;aaaa et précision
 sub parse_date {
 	my ($date_in) = @_;	
 	my $date='';
@@ -140,22 +140,12 @@ sub parse_date {
 		$mois="";
 		$an=$1;
 	}
-	given ($an) {
-		when ('I') { $an=1; }
-		when ('II') { $an=2; }
-		when ('III') { $an=3; }
-		when ('IIII') { $an=4; }
-		when ('IV') { $an=4; }
-		when ('V') { $an=5; }
-		when ('VI') { $an=6; }
-		when ('VII') { $an=7; }
-		when ('VIII') { $an=8; }
-		when ('IX') { $an=9; }
-		when ('X') { $an=10; }
-		when ('XI') { $an=11; }
-		when ('XII') { $an=12; }
-		when ('XIII') { $an=13; }
-		when ('I') { $an=1; }
+	given ($an) { # Serait mieux dans un hash
+		when ('I') { $an=1; }    when ('II') { $an=2; }    when ('III') { $an=3; }
+		when ('IIII') { $an=4; } when ('IV') { $an=4; }    when ('V') { $an=5; }
+		when ('VI') { $an=6; }   when ('VII') { $an=7; }   when ('VIII') { $an=8; }
+		when ('IX') { $an=9; }   when ('X') { $an=10; }    when ('XI') { $an=11; }
+		when ('XII') { $an=12; } when ('XIII') { $an=13; } when ('I') { $an=1; }
 	}
 
 #	switch ($comm) { # Type de date
@@ -198,10 +188,13 @@ sub parse_date {
 	return $date;
 }
 
-sub parse_patronyme {
+sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètres URL et l'affichage
+        # nettoyage et passage unicode, accentuation, majuscules et minuscules forcées
 	my ($url,$patronyme)=@_;
 	my $prenom="",$nom="",$surname="";
 	my %items;
+
+	# Récupération selon les variables URL
 	foreach $item (split /&/, $url) {
 		($key,$value)=split "=",$item;
 		$items{$key}=un_urlize($value);
@@ -214,20 +207,33 @@ sub parse_patronyme {
 		$surname=$1;
 		message DEBUG,"$patronyme - $` $'";
 	}
+
+	# Passage en bas de casse UTF-8 de la chaine HTML dans une temporaire
 	$tmp_patro = NFD(lc($patronyme)); 
+	# NFD -> Normalisation et décomposition en forme D, ie. lettre pure ansi et diacritique combinants
+	# Servira à la suppression des diacritiques combinants
 	message TRACE,"PP:$patronyme:$tmp_patro:";
+
+	# Suppression des diacritiques dans la chaine HTML dans la temporaire
 	if ($tmp_patro =~ s/\pM//g) {
+		# \p{M} or \p{Mark}: a character intended to be combined with another character (e.g. accents, umlauts, enclosing boxes, etc.). 
+		# Remplacement des tirets et élisions par des espaces
 		$tmp_patro =~ s/['-]/ /g;
 		message DEBUG,"Accents detectes. $tmp_patro";
+		# Dénominateur commun : sans diacritique, bas de casse
 		$tmp = NFD(lc($nom));
 		message DEBUG,"LC CHECK $tmp";
+		# Recupération de l'index de position de la variable dans le commentaire HTML bas de casse et désaccentué
 		if ($tmp =~ /^[\p{L}' -]+$/) {
+			# \p{L} matches a single code point in the category "letter".
 			$index=index($tmp_patro,$tmp);
 			message INFO,"Catch : $tmp ($index)";
 			message TRACE,"PP:$tmp_patro:$tmp:$index!";
 			message TRACE,"PP:$patronyme:$index:".length($tmp)."!";
+			# Récupération de la sous chaîne dans l'originade
 			$nom=substr($patronyme,$index,length($tmp));
 		}
+		# Même process avec le prenom
 		$tmp = NFD(lc($prenom));
 		message DEBUG,"LC CHECK $tmp";
 		if ($tmp =~ /^[\p{L}' -]+$/) {
@@ -238,9 +244,15 @@ sub parse_patronyme {
 			$prenom=substr($patronyme,$index,length($tmp));
 		}
 	}
+
+	# Et reformation de la casse : "Prénom-Composé" "NOM-COMPOSÉ"
+	# Plus recomposition canonique (transformation des glyphes + dacritiques combinants en glybhes combinés)
+	# Pour compatibilité maximale
 	message TRACE,"PP:$nom:$prenom:";
 	$nom =~ s/([\w' -]+)/\U$1/g;
-	$prenom =~ s/([\w'-]+)/\u\L$1/g;
+	$nom = NFC($nom);
+	$prenom =~ s/([\w]+)/\u\L$1/g;
+	$prenom = NFC($prenom);
 	message INFO,"Resultat : P:$prenom N:$nom";
 	return ($prenom,$nom,$surname);
 }
@@ -416,6 +428,7 @@ foreach my $li (<STDIN>) {
 		when (292) { # Prof
 			$state=ST_AFF if ($li =~ /^<\/tr>/);
 			if ($li =~ /^<td[^>]*>(.*)<\/td>/) {
+				message DEBUG,"Prof:$1";
 				$prof=$1;
 				$state=ST_AFF;
 			}
@@ -461,6 +474,7 @@ foreach my $li (<STDIN>) {
 			add_line "$lm;";
 			add_line "$nbe";
 
+			$line =~s/;\s+;/;;/g;
 			push @lines,$line;
 			message DEBUG,$line;
 
