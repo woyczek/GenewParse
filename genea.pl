@@ -32,6 +32,7 @@ use experimental qw(smartmatch);
 #      - experimental;
 
 use constant VERSION 		=> "1.5";
+use constant COMMIT_ID 		=> '$Id$';
 
 #use Switch; # deprecated
 #use DateTime::Calendar::FrenchRevolutionary;
@@ -87,6 +88,7 @@ my $RE_CAR_WORD = qr/[\w  ${RE_CAR}]+/;
 sub message { # Affichage d'un message selon verbosité
 	my ($alert_level,$message)=@_;
 	print STDERR LEVEL->[$alert_level]." $alert_level: $message\n" if $DEBUG_LEVEL >= $alert_level;
+	exit 1 if $alert_level==CRIT;
 }
 
 sub add_line { # Concatenation de donnees en une ligne (vers CSV)
@@ -345,6 +347,8 @@ sub print_sosa { # Affiche les efants et le n½ud courant ; récursif
 
 sub show_help { # Ben, help...
 	print STDERR "
+GenewParse Version ".VERSION."
+
 Usage :
 genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
 	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
@@ -446,7 +450,7 @@ foreach my $li (<STDIN>) {
 			if ($li =~ /^<table summary="ancestors" class="short_display_table">/) {
 				$root_sosa=$1;
 				$state=10;
-				message INFO,"-- C'est une V7";
+				message INFO,"-- C'est une v7 - It is a v7 output. I cannot parse it. #######";
 			}
 			message TRACE,"-- $state";
 			if ($li =~ /^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
@@ -462,6 +466,7 @@ foreach my $li (<STDIN>) {
 		when (10) {
 			if ($li =~ /^<\/colgroup>/) { $state=2; }
 			message TRACE,"-- $state";
+			message CRIT,"-- C'est une v7 - It is a v7 output. I cannot parse it. #######";
 		}
 		when (2) {
 			if ($li =~ /^<\/tr>/) { $state=ST_INTERLIGNE; }
