@@ -1,10 +1,11 @@
 #!/usr/bin/perl
 
-use 5.010;
+use v5.10;
 use utf8;
 use open ':std', ':encoding(UTF-8)';
 use feature 'unicode_strings';
 #use warnings;
+use experimental qw(smartmatch);
 
 ## License : GPL
 
@@ -18,15 +19,34 @@ use feature 'unicode_strings';
 # 1.3 : 30/05/18 : Suppression du module Switch - switch limit - help page - debug dates & accents
 #                : Fix bug de logique sur les majuscules des prénoms - recombinaison compatible forme combinée unicode
 # 1.4 : 30/05/18 : Ajout affichage en forme d'arbre
+# 1.5 : 31/05/18 : Ajout fichiers i/o + curl
+
+#############################################
+# https://github.com/woyczek/GeneaParse.git #
+#############################################
 
 # Dependencies :
 # CPAN - Text::Unidecode qw(unidecode);
 #      - HTML::Entities qw(decode_entities);
 #      - Unicode::Normalize;
+#      - experimental;
 
-######
+use constant VERSION 		=> "1.5";
 
-use constant VERSION 		=> "1.4";
+#use Switch; # deprecated
+#use DateTime::Calendar::FrenchRevolutionary;
+use Text::Unidecode qw(unidecode);
+use HTML::Entities qw(decode_entities);
+use Unicode::Normalize;
+
+use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+
+# State
+use constant ST_INTERLIGNE	=> 20;
+use constant ST_AFF 		=> 30;
+use constant ST_DATE_NAISS	=> 23;
+use constant ST_DATE_MARIAGE	=> 26;
+use constant ST_DATE_DECES	=> 29;
 
 # DEBUG LEVEL
 use constant { 
@@ -41,22 +61,6 @@ use constant {
 
 use constant LEVEL => [ qw/CRIT ERR WARN INFO DEBUG TRACE XTRACE XXTRACE XXXTRACE/ ];
 
-#use Switch; # deprecated
-#use DateTime::Calendar::FrenchRevolutionary;
-use Text::Unidecode qw(unidecode);
-use HTML::Entities qw(decode_entities);
-use Unicode::Normalize;
-
-use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
-#use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;periode_naiss_lui;date_naiss_lui;lieu_naiss_lui;periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;periode_naiss_elle;date_naiss_elle;lieu_naiss_elle;periode_décès_elle;date_décès_elle;lieu_décès_elle;métier_elle;periode_marr;date_marr;lieu_marr;nb_enfant";
-
-# State
-use constant ST_INTERLIGNE	=> 20;
-use constant ST_AFF 		=> 30;
-use constant ST_DATE_NAISS	=> 23;
-use constant ST_DATE_MARIAGE	=> 26;
-use constant ST_DATE_DECES	=> 29;
-
 # Globales
 my $state=0;
 my @lines; # contient les données à afficher
@@ -67,10 +71,18 @@ my $last_sosa=0;
 my $SW_LIMIT=0;
 my $SW_DEBUG=0;
 my $SW_TREE=0;
+my $SW_IN=0;
+my $SW_OUT=0;
+my $SW_CURL=0;
+my $DISTANT_URL='';
 my $SOSA_LIMIT=0;
 my $DEBUG_LEVEL=CRIT;
 my $TREE_LIMIT=0;
 
+my $RE_CAR = "'’-"; # The dash MUST be the last one -- le trait d'union doit être le dernier
+my $RE_CAR_SEP = qr/[${RE_CAR}]/;
+my $RE_CAR_NOM = qr/^[\p{L}  ${RE_CAR}]+$/;
+my $RE_CAR_WORD = qr/[\w  ${RE_CAR}]+/;
 
 sub message { # Affichage d'un message selon verbosité
 	my ($alert_level,$message)=@_;
@@ -85,8 +97,7 @@ sub add_line { # Concatenation de donnees en une ligne (vers CSV)
 	#$line.=unidecode(decode_entities($tmp_line));
 }
 
-# Conversion URL_ENCODE vers ANSI classique
-sub un_urlize {
+sub un_urlize { # Conversion URL_ENCODE vers ANSI classique
 	my ($rv) = @_;
 	$rv =~ s/\+/ /g;
 	$rv =~ s/%(..)/pack("c",hex($1))/ge;
@@ -97,33 +108,37 @@ sub revo2greg { # To be written
 	my ($date)=@_;
 }
 
-# Conversion URL_ENCODE vers ANSI classique, nettoyage, découpage jj;mm;aaaa et précision
-sub parse_date {
+sub parse_date { # Conversion URL_ENCODE vers ANSI classique, nettoyage, découpage jj;mm;aaaa et précision
 	my ($date_in) = @_;	
 	my $date='';
 	my $periode=''; my $comm='';
 	my $jour='';my $mois='';my $an='';
 
+	# Précision, date, calendrier
 	if ($date_in =~ / ([^ ]+\/[^ ]+) /) {
 		$periode=$`;
 		$date=$1;
 		$comm=$';
 	}
+	# Précision, date
 	elsif ($date_in =~ /^(\w+) ([^ ]+)/){
 		$date=$2;
 		$periode=$1;
 		$comm="";
 	}
+	# Date, calendrier
 	elsif ($date_in =~ /^([^ ]+) ([\w()]+)/){
 		$periode="";
 		$date=$1;
 		$comm=$2;
 	}
+	# Date seule
 	elsif ($date_in =~ /^([^ ]+)$/){
 		$periode="";
 		$date=$1;
 		$comm="";
 	}
+	# Default : tel quel.
 	else {
 		$date = $date_in;
 	}
@@ -132,7 +147,10 @@ sub parse_date {
 	message  DEBUG, "| $periode ---- $date ---- $comm |";
 	message  DEBUG, "$state";
 
+	# Affichage des erreurs. TO BE DELETED
 	$date =~ s/ +$/!/; 
+
+	# Allez, on découpe en jj/mm/aa+
 	if ($date =~ /^(\d{2})-([\dA-Z]{2})-([\dXIV]+)$/) {
 		$jour=$1;
 		$mois=$2;
@@ -146,6 +164,7 @@ sub parse_date {
 		$mois="";
 		$an=$1;
 	}
+	# Conversion révol - révol, mais numérique
 	given ($an) { # Serait mieux dans un hash
 		when ('I') { $an=1; }    when ('II') { $an=2; }    when ('III') { $an=3; }
 		when ('IIII') { $an=4; } when ('IV') { $an=4; }    when ('V') { $an=5; }
@@ -154,6 +173,7 @@ sub parse_date {
 		when ('XII') { $an=12; } when ('XIII') { $an=13; } when ('I') { $an=1; }
 	}
 
+	# Flag type de calendrier, deprecated (laissé pour mémoire et réactivation le cas échéant)
 #	switch ($comm) { # Type de date
 #		case /républicain/ {
 #			#revo2greg(\$date);
@@ -190,11 +210,12 @@ sub parse_date {
 		}
 	}
 	message DEBUG, "| $periode ---- $date ---- $comm |";
+	# Réassemblage
 	$date="$jour;$mois;$an";
 	return $date;
 }
 
-sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètres URL et l'affichage
+sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètres URL et l'affichage
         # nettoyage et passage unicode, accentuation, majuscules et minuscules forcées
 	my ($url,$patronyme)=@_;
 	my $prenom="",$nom="",$surname="";
@@ -221,16 +242,16 @@ sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètre
 	message TRACE,"PP:$patronyme:$tmp_patro:";
 
 	# Suppression des diacritiques dans la chaine HTML dans la temporaire
-	if ($tmp_patro =~ s/\pM//g) {
+	# et Remplacement des tirets et élisions par des espaces
+	if ($tmp_patro =~ s/[\pM]//g || s/$RE_CAR_SEP/ /g) {
 		# \p{M} or \p{Mark}: a character intended to be combined with another character (e.g. accents, umlauts, enclosing boxes, etc.). 
-		# Remplacement des tirets et élisions par des espaces
-		$tmp_patro =~ s/['-]/ /g;
-		message DEBUG,"Accents detectes. $tmp_patro";
+		message DEBUG,"Accents detectes. $tmp_patro - $RE_CAR_SEP";
 		# Dénominateur commun : sans diacritique, bas de casse
 		$tmp = NFD(lc($nom));
 		message DEBUG,"LC CHECK $tmp";
 		# Recupération de l'index de position de la variable dans le commentaire HTML bas de casse et désaccentué
-		if ($tmp =~ /^[\p{L}' -]+$/) {
+		#if ($tmp =~ /^[\p{L}'  ’-]+$/) {
+		if ($tmp =~ /$RE_CAR_NOM/) {
 			# \p{L} matches a single code point in the category "letter".
 			$index=index($tmp_patro,$tmp);
 			message INFO,"Catch : $tmp ($index)";
@@ -242,7 +263,8 @@ sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètre
 		# Même process avec le prenom
 		$tmp = NFD(lc($prenom));
 		message DEBUG,"LC CHECK $tmp";
-		if ($tmp =~ /^[\p{L}' -]+$/) {
+		#if ($tmp =~ /^[\p{L}'  ’-]+$/) {
+		if ($tmp =~ /$RE_CAR_NOM/) {
 			$index=index($tmp_patro,$tmp);
 			message INFO,"Catch : $tmp ($index)";
 			message TRACE,"PP:$tmp_patro:$tmp:$index!";
@@ -255,7 +277,8 @@ sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètre
 	# Plus recomposition canonique (transformation des glyphes + dacritiques combinants en glybhes combinés)
 	# Pour compatibilité maximale
 	message TRACE,"PP:$nom:$prenom:";
-	$nom =~ s/([\w' -]+)/\U$1/g;
+	#$nom =~ s/([\w'  ’-]+)/\U$1/g;
+	$nom =~ s/(${RE_CAR_WORD}+)/\U$1/g;
 	$nom = NFC($nom);
 	$prenom =~ s/([\w]+)/\u\L$1/g;
 	$prenom = NFC($prenom);
@@ -263,31 +286,44 @@ sub parse_patronyme { # Decoupage du patronyme en tronçon, selon les paramètre
 	return ($prenom,$nom,$surname);
 }
 
+# Fonctions d'affichage de l'arbre (ce n'est pas le fonctionnement nominal, mais pratique pour debug)
+# Puissances de 2 (position du MSB)
 my %GENERATION = qw( 1  1
-	2  2
-	4  3
-	8  4
-	16  5
-	32  6
-	64  7
-	128  8
-	256  9
-	512  10
-	1024  11
-	2048  12
-	4096  13
-	8182  14
+	2        2
+	4        3
+	8        4
+	16       5
+	32       6
+	64       7
+	128      8
+	256      9
+	512     10
+	1024    11
+	2048    12
+	4096    13
+	8192    14
+	16384   15
+	32768   16
+	65536   17
+	131072  18
+	262144  19
+	524288  20
+	1048576 21
       );
 
-sub get_gen {
+# Fonctions d'affichage de l'arbre (ce n'est pas le fonctionnement nominal, mais pratique pour debug)
+sub get_gen { # Recupère la position du MSB. Les générations étant des puissances de 2, on utilise un algo binaire.
 	my ($sosa)=@_;
-	my $msb=(($sosa | ($sosa >> 1) | ($sosa >> 2) | ($sosa >> 4) | ($sosa >> 8) | ($sosa >> 16) | ($sosa >> 32)) >> 1)  + 1;
+	my $msb=$sosa;
+	foreach $s (0,1,2,4,8,16,32) {
+		$msb=$msb|($msb >> $s);
+	}
+	return $GENERATION{($msb>>1) + 1};
 	message DEBUG,"$sosa -> $msb -> $GENERATION{$msb}";
-	return $GENERATION{$msb};
 }
 
-
-sub print_sosa {
+# Fonctions d'affichage de l'arbre (ce n'est pas le fonctionnement nominal, mais pratique pour debug)
+sub print_sosa { # Affiche les efants et le n½ud courant ; récursif
 	my ($sosa,$max_sosa)=@_;
 	if ($sosa<$max_sosa) {
 		my $gen=get_gen($sosa);
@@ -307,43 +343,89 @@ sub print_sosa {
 	}
 }
 
-sub show_help {
-	print "
+sub show_help { # Ben, help...
+	print STDERR "
 Usage :
-genea.pl [-v <LEVEL>] [-l <SOSA>] [-h|-?]
-	-v <LEVEL> : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
-	-l <SOSA>  : ne traite que le sosa <SOSA>
-	-t <LEVEL> : affiche sous forme d'arbre, niveau <LEVEL> maximal
+genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
+	-l <SOSA>   : ne traite que le sosa <SOSA>
+	-t <LEVEL>  : affiche sous forme d'arbre, niveau <LEVEL> maximal
+	-i <INPUT>  : fichier en entrée. Si omis, utilisera STDIN
+	-u <URL>    : URL à télécharger en pré-traitement. Nécessite -i, le fichier sera écrasé
+	-o <OUTPUT> : fichier en sortie. Si omis, utilisera STDOUT
 ";
 	exit;
 }
 
 ###########################################################################
+# Principale
 
-foreach my $opt (@ARGV){
+# Automate à états, sur $state.
+# Pour chaque paramètre en argument, un tour d'automate.
+foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne de commande
 	given ($state) {
+		message DEBUG, "Getopt $state - $opt";
 		when (0) { 
 			$state=2 if $opt eq "-v";
 			$state=4 if $opt eq "-l";
 			$state=6 if $opt eq "-t";
+			$state=7 if $opt eq "-u";
+			$state=8 if $opt eq "-i";
+			$state=9 if $opt eq "-o";
 			show_help if $opt eq "-?";
 			show_help if $opt eq "-h";
-			show_help if $state == 0;	
+			if ($state == 0)
+			{ 
+				print STDERR "$opt : option non reconnue"; 
+				show_help  
+			} 
 		}
-		when (2) { 
+		when (2) { # Verbosité (sur STDERR)
 			$state=0; 
 			$DEBUG_LEVEL=$opt;
 			$SW_DEBUG=1;
 		}
-		when (4) { 
+		when (4) { # Affichage d'un seul sosa
 			$state=0; 
 			$SW_LIMIT=1;
 			$SOSA_LIMIT=$opt;
 		}
-		when (6) { 
+		when (6) { # Affichage sous forme d'arbre, de profondeur $TREE_LIMIT
 			$state=0;
 			$SW_TREE=1;
 			$TREE_LIMIT=$opt;
+		}
+		when (8) { # Input file
+			$state=0;
+			$SW_IN=1;
+			$INFILE_NAME=$opt;
+			open $INFILE, "<", $opt || die ("Fichier illisible $opt -- $!");
+			message WARN, "Ouverture du fichier < $opt -- $!";
+			*STDIN = *$INFILE;
+		}
+		when (9) { # Output uile
+			$state=0;
+			$SW_OUT=1;
+			message WARN, "Ouverture du fichier > $opt";
+			open $OUTFILE, ">", $opt || die ("Fichier illisible $opt -- $!");
+			#message WARN, "Ouverture du fichier > $opt -- $!";
+			select $OUTFILE;
+		}
+		when (7) { # CURL !
+			show_help unless $SW_IN;
+			message INFO, "Curl : -o $INFILE_NAME $opt $SW_IN";
+			$DISTANT_URL=$opt;
+			close $INFILE;
+			`curl -o $INFILE_NAME "$DISTANT_URL"`;
+			if (1) {
+				message INFO, "Le fichier est généré, et pourra être réutilisé";
+				message INFO, "avec '$ARGV[0] $INFILE_NAME'";
+				open $INFILE, "<", $INFILE_NAME || die ("Fichier illisible $INFILE_NAME -- $!");
+				message WARN, "Ouverture du fichier < $INFILE_NAME -- $!";
+				*STDIN = *$INFILE;
+			} else {
+				warn "Erreur de CURL";
+			}
 		}
 	}
 }
@@ -352,16 +434,14 @@ $state=0;
 
 message DEBUG, "Options : $SW_LIMIT : $SOSA_LIMIT - $SW_DEBUG : $DEBUG_LEVEL";
 
-
-# Entête
-push @lines,FORMAT;
-
+# Automate à états, sur $state.
+# Pour chaque paramètre en argument, un tour d'automate.
 foreach my $li (<STDIN>) {
 	chomp $li;
 	message XTRACE, "$state:$li!";
 	# s/&nbsp;/ /g;
 
-	given ($state) {
+	given ($state) { # On démarre le traitement à ST_INTERLIGNE, mais on s'assure d'avoir le bon format sur les deux états précédents
 		when (0) {
 			if ($li =~ /^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
 				$root_sosa=$1;
@@ -376,9 +456,10 @@ foreach my $li (<STDIN>) {
 		when (2) {
 			if ($li =~ /^<\/tr>/) { $state=ST_INTERLIGNE; }
 		}
+		###############################################
 		when (ST_INTERLIGNE) { # Interligne
 			message INFO,"====================";
-			if ($li =~ /^<tr>/) { 
+			if ($li =~ /^<tr>/) { # Mariage simple
 				$state=201; 
 				%items_a=();
 				%items_b=();
@@ -389,7 +470,7 @@ foreach my $li (<STDIN>) {
 			}
 			message TRACE,"-- $state";
 		}
-		when (201) { # SOSA
+		when (201) { # SOSA # Première ligne d'un mariage multiple
 			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
 				$sosa=un_urlize($1);
 				$sosa =~ s/(&nbsp;| )//g;
@@ -425,7 +506,7 @@ foreach my $li (<STDIN>) {
 				$state=205;
 			}
 		}
-		when (205) { # Second membre du couple
+		when (205) { # Second membre du couple # Lignes suivantes d'un mariage multiple
 			$state=ST_INTERLIGNE if ($li =~ /^<\/tr>/ and $SOSA_LIMIT!=$sosa);
 			next if ($SW_LIMIT and $SOSA_LIMIT!=$sosa);
 			$state=ST_AFF if ($li =~ /^<\/tr>/);
@@ -491,8 +572,7 @@ foreach my $li (<STDIN>) {
 			}
 		}
 
-
-		when (ST_AFF) { 
+		when (ST_AFF) {  # Traitement des données de la personne référencée par le SOSA $sosa
 			if ($SW_TREE) { # Arbre ##########
 				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
 				# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
@@ -504,12 +584,17 @@ foreach my $li (<STDIN>) {
 				$line =~s/;\s+;/;;/g;
 				push @lines,$line;
 				push @{$lines{$sosa}},$#lines;
+				# On gère un buffer de lignes formatése
+				# Et un hash de SOSA pointant vers le buffer.
 				message DEBUG,$line;
 			} else { # CSV ##############
 				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
 				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
 				# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
 				$line="";
+
+				# Génération du CSV. Le SOSA est le premier cham, le nb_enfants le dernier.
+				# Tronçonné en morceaux pour la lisibilité du code.
 				add_line $sosa.";";
 				message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
 				foreach $k ('p', 'n') {
@@ -549,23 +634,40 @@ foreach my $li (<STDIN>) {
 				message DEBUG,$line;
 			}
 
-			if (/^<tr>/) { $state=201; } else { $state=ST_INTERLIGNE }
+			# Fin de tableau ? Si oui, on a raté une ligne, et on retourne tout de suite au SOSA.
+			# au risque de rater un individu
+			if ($li =~ /^<tr>/) { 
+				$state=201; 
+				message WARN, "$sosa - Fin de ligne manquée, rattrapage."} 
+			else { 
+				$state=ST_INTERLIGNE 
+			}
 		}
 	};
 
 }
 
-if ($SW_TREE) {
+###############################################################################
+# Post traitement
+
+if ($SW_TREE) { # Affichage des lignes de l'arbre
 	message WARN,"==== ARBRE - $last_sosa";
 
 	print "Affichage de l'arbre ascendant par SOSA (generation max : $TREE_LIMIT)\n";
 	print "------------------------------------------------------------------\n";
 	print_sosa(1,$last_sosa);
-} else {
+} else { # Affichage du CSV, en vrac, dans l'ordre d'entrée.
 	message WARN,"==== LINE";
+	# Entête
+	unshift @lines,FORMAT;
 	unshift @lines,"# <GeneaParse v".VERSION.">";
 	foreach (@lines) {
 		print "$_\n";
 		#message INFO,"$_";
 	}
 }
+
+close $INFILE if $SW_IN;
+close $OUTFILE if $SW_OUT;
+
+1;
