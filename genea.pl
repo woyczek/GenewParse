@@ -443,6 +443,12 @@ foreach my $li (<STDIN>) {
 
 	given ($state) { # On démarre le traitement à ST_INTERLIGNE, mais on s'assure d'avoir le bon format sur les deux états précédents
 		when (0) {
+			if ($li =~ /^<table summary="ancestors" class="short_display_table">/) {
+				$root_sosa=$1;
+				$state=10;
+				message INFO,"-- C'est une V7";
+			}
+			message TRACE,"-- $state";
 			if ($li =~ /^<h2><span class="htitle">&nbsp;<\/span><span>(.+)<\/span><\/h2>/) {
 				$root_sosa=$1;
 				$state=1;
@@ -453,12 +459,21 @@ foreach my $li (<STDIN>) {
 			if ($li =~ /^<tbody>/) { $state=2; }
 			message TRACE,"-- $state";
 		}
+		when (10) {
+			if ($li =~ /^<\/colgroup>/) { $state=2; }
+			message TRACE,"-- $state";
+		}
 		when (2) {
 			if ($li =~ /^<\/tr>/) { $state=ST_INTERLIGNE; }
 		}
 		###############################################
 		when (ST_INTERLIGNE) { # Interligne
 			message INFO,"====================";
+			if ($li =~ /^<tr id="[^"]+">/) { # Mariage simple
+				$state=201; 
+				%items_a=();
+				%items_b=();
+			}
 			if ($li =~ /^<tr>/) { # Mariage simple
 				$state=201; 
 				%items_a=();
