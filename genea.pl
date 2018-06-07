@@ -20,6 +20,7 @@ use experimental qw(smartmatch);
 #                : Fix bug de logique sur les majuscules des prénoms - recombinaison compatible forme combinée unicode
 # 1.4 : 30/05/18 : Ajout affichage en forme d'arbre
 # 1.5 : 31/05/18 : Ajout fichiers i/o + curl
+# 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization
 
 #############################################
 # https://github.com/woyczek/GeneaParse.git #
@@ -31,7 +32,7 @@ use experimental qw(smartmatch);
 #      - Unicode::Normalize;
 #      - experimental;
 
-use constant VERSION 		=> "1.5";
+use constant VERSION 		=> "1.6";
 use constant COMMIT_ID 		=> '$Id$';
 
 #use Switch; # deprecated
@@ -75,12 +76,13 @@ my $SW_TREE=0;
 my $SW_IN=0;
 my $SW_OUT=0;
 my $SW_CURL=0;
+my $SW_NORM=1;
 my $DISTANT_URL='';
 my $SOSA_LIMIT=0;
 my $DEBUG_LEVEL=CRIT;
 my $TREE_LIMIT=0;
 
-my $RE_CAR = "'’-"; # The dash MUST be the last one -- le trait d'union doit être le dernier
+my $RE_CAR = "'’–−-"; # The dash MUST be the last one -- le trait d'union doit être le dernier
 my $RE_CAR_SEP = qr/[${RE_CAR}]/;
 my $RE_CAR_NOM = qr/^[\p{L}  ${RE_CAR}]+$/;
 my $RE_CAR_WORD = qr/[\w  ${RE_CAR}]+/;
@@ -147,7 +149,7 @@ sub parse_date { # Conversion URL_ENCODE vers ANSI classique, nettoyage, découp
 	# Remplacement des / en -
 	$date =~ s/\//-/g;
 	message  DEBUG, "| $periode ---- $date ---- $comm |";
-	message  DEBUG, "$state";
+	message  TRACE, "$state";
 
 	# Affichage des erreurs. TO BE DELETED
 	$date =~ s/ +$/!/; 
@@ -222,6 +224,8 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 	my ($url,$patronyme)=@_;
 	my $prenom="",$nom="",$surname="";
 	my %items;
+	my $is_diacritic;
+	my $is_tiret;
 
 	# Récupération selon les variables URL
 	foreach $item (split /&/, $url) {
@@ -231,7 +235,7 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 	}
 	$prenom=$items{p};
 	$nom=$items{n};
-	message TRACE,"PP:$patronyme:$prenom:$nom:";
+	message DEBUG,"PP:$patronyme:$prenom:$nom:";
 	if ($patronyme =~ / <em>(.+)<\/em> /){
 		$surname=$1;
 		message DEBUG,"$patronyme - $` $'";
@@ -245,7 +249,9 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 
 	# Suppression des diacritiques dans la chaine HTML dans la temporaire
 	# et Remplacement des tirets et élisions par des espaces
-	if ($tmp_patro =~ s/[\pM]//g || s/$RE_CAR_SEP/ /g) {
+	$is_diacritic=($tmp_patro =~ s/[\pM]//g);
+	$is_tiret=($tmp_patro =~ s/$RE_CAR_SEP/ /g);
+	if ($is_diacritic || $is_tiret) {
 		# \p{M} or \p{Mark}: a character intended to be combined with another character (e.g. accents, umlauts, enclosing boxes, etc.). 
 		message DEBUG,"Accents detectes. $tmp_patro - $RE_CAR_SEP";
 		# Dénominateur commun : sans diacritique, bas de casse
@@ -256,21 +262,21 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 		if ($tmp =~ /$RE_CAR_NOM/) {
 			# \p{L} matches a single code point in the category "letter".
 			$index=index($tmp_patro,$tmp);
-			message INFO,"Catch : $tmp ($index)";
-			message TRACE,"PP:$tmp_patro:$tmp:$index!";
-			message TRACE,"PP:$patronyme:$index:".length($tmp)."!";
+			message INFO,"Catch : $tmp ($index) -- $RE_CAR_SEP -- $RE_CAR_NOM";
+			message DEBUG,"PP:$tmp_patro:$tmp:$index!";
+			message DEBUG,"PP:$patronyme:$index:".length($tmp)."!";
 			# Récupération de la sous chaîne dans l'originade
 			$nom=substr($patronyme,$index,length($tmp));
 		}
 		# Même process avec le prenom
 		$tmp = NFD(lc($prenom));
 		message DEBUG,"LC CHECK $tmp";
-		#if ($tmp =~ /^[\p{L}'  ’-]+$/) {
+		#if ($tmp =~ /^[\p{L}'  ’–—−-]+$/) {
 		if ($tmp =~ /$RE_CAR_NOM/) {
 			$index=index($tmp_patro,$tmp);
-			message INFO,"Catch : $tmp ($index)";
-			message TRACE,"PP:$tmp_patro:$tmp:$index!";
-			message TRACE,"PP:$patronyme:$index!".length($tmp);
+			message INFO,"Catch : $tmp ($index) -- $RE_CAR_SEP -- $RE_CAR_NOM";
+			message DEBUG,"PP:$tmp_patro:$tmp:$index!";
+			message DEBUG,"PP:$patronyme:$index!".length($tmp);
 			$prenom=substr($patronyme,$index,length($tmp));
 		}
 	}
@@ -280,9 +286,9 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 	# Pour compatibilité maximale
 	message TRACE,"PP:$nom:$prenom:";
 	#$nom =~ s/([\w'  ’-]+)/\U$1/g;
-	$nom =~ s/(${RE_CAR_WORD}+)/\U$1/g;
+	$nom =~ s/(${RE_CAR_WORD}+)/\U$1/g if $SW_NORM;
 	$nom = NFC($nom);
-	$prenom =~ s/([\w]+)/\u\L$1/g;
+	$prenom =~ s/([\w]+)/\u\L$1/g if $SW_NORM;
 	$prenom = NFC($prenom);
 	message INFO,"Resultat : P:$prenom N:$nom";
 	return ($prenom,$nom,$surname);
@@ -350,13 +356,14 @@ sub show_help { # Ben, help...
 GenewParse Version ".VERSION."
 
 Usage :
-genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
 	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
 	-l <SOSA>   : ne traite que le sosa <SOSA>
 	-t <LEVEL>  : affiche sous forme d'arbre, niveau <LEVEL> maximal
+	-N          : don't normalize case
 	-i <INPUT>  : fichier en entrée. Si omis, utilisera STDIN
 	-u <URL>    : URL à télécharger en pré-traitement. Nécessite -i, le fichier sera écrasé
-	-o <OUTPUT> : fichier en sortie. Si omis, utilisera STDOUT
+	-o <OUTPUT> : output file. will use STDOUT if omitted.
 ";
 	exit;
 }
@@ -378,7 +385,10 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 			$state=9 if $opt eq "-o";
 			show_help if $opt eq "-?";
 			show_help if $opt eq "-h";
-			if ($state == 0)
+			if ($opt eq "-N") {
+				$SW_NORM=0;
+			}
+			elsif ($state == 0)
 			{ 
 				print STDERR "$opt : option non reconnue"; 
 				show_help  
