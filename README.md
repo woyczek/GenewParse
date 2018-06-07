@@ -4,7 +4,7 @@ genea.pl - GenewParse
 
 # VERSION
 
-version 1.5
+version 1.6
 
 # SYNOPSYS
 
@@ -22,6 +22,7 @@ Parseur de tableau généalogique geneweb vers un fichier CSV, prêt pour le ré
 - 1.3 : 30/05/18 : Change Switch module to given - switch limit - help page - debug dates & accents, Fix logical bug de logique for caps - unicode normalization on split/combined mode
 - 1.4 : 30/05/18 : Tree display
 - 1.5 : 31/05/18 : input/output files + curl handling
+- 1.6 : 07/06/18 : Add case normalisation switch and fix bug on patronym with dashes
 
 ## Dependencies :
 
@@ -35,10 +36,11 @@ Install them with "cpan -i Text::Unidecode qw(unidecode) HTML::Entities qw(decod
 
 # DESCRIPTION
 
-Il parse le résultat d'un curl sur l'URL de votre geneweb, via STDIN
+The goal of this parser is to fetch a curl result on URL of any geneweb version prior to 7.0, and transform it in
+CSV with normalization ability.
 
-Il effectue le nettoyage des dates, normalisation Unicode, mise en forme des patronymes sous forme cononique.
-La transformation des dates républicaines, et du nettoyage cosmétique.
+All patronyms are set-up with the normalization options you gave, the french republican dates ar transformed, and
+some housekeeping is done.
 
 # USAGE
 
@@ -46,6 +48,7 @@ La transformation des dates républicaines, et du nettoyage cosmétique.
 genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
         -v <LEVEL>  : with <LEVEL> value between 0 (quiet) et 6 (Xtra Trace)
         -l <SOSA>   : only process sosa <SOSA>
+	-N          : disable case normalization
         -t <LEVEL>  : Tree format display, by patronym branch, with <LEVEL> as maxdepth
         -i <INPUT>  : input file. If this flag is omitted, the parser will use STDIN
         -u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.

@@ -251,7 +251,7 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 	# et Remplacement des tirets et élisions par des espaces
 	$is_diacritic=($tmp_patro =~ s/[\pM]//g);
 	$is_tiret=($tmp_patro =~ s/$RE_CAR_SEP/ /g);
-	if ($is_diacritic || $is_tiret) {
+	if ($is_diacritic || $is_tiret || (!$SW_NORM) ) {
 		# \p{M} or \p{Mark}: a character intended to be combined with another character (e.g. accents, umlauts, enclosing boxes, etc.). 
 		message DEBUG,"Accents detectes. $tmp_patro - $RE_CAR_SEP";
 		# Dénominateur commun : sans diacritique, bas de casse
