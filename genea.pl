@@ -20,7 +20,8 @@ use experimental qw(smartmatch);
 #                : Fix bug de logique sur les majuscules des prénoms - recombinaison compatible forme combinée unicode
 # 1.4 : 30/05/18 : Ajout affichage en forme d'arbre
 # 1.5 : 31/05/18 : Ajout fichiers i/o + curl
-# 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization
+# 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization, add implexes
+
 
 #############################################
 # https://github.com/woyczek/GeneaParse.git #
@@ -353,7 +354,7 @@ sub print_sosa { # Affiche les efants et le n½ud courant ; récursif
 
 sub show_help { # Ben, help...
 	print STDERR "
-GenewParse Version ".VERSION."
+GenewParse Version ".VERSION." - ".$COMMIT_ID."
 
 Usage :
 genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
@@ -512,12 +513,17 @@ foreach my $li (<STDIN>) {
 			message TRACE,"-- $state $_";
 		}
 		when (22) { # Principal
+			$implexe="";
 			$state=ST_INTERLIGNE if ($li =~ /^<\/tr>/);
 			next if ($SW_LIMIT and $SOSA_LIMIT!=$sosa);
 			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
 				$datas=$1;
 				if ($datas =~ (/<a href=".+\?(.+)">(.*)<\/a>/)) {
 					($items_a{p},$items_a{n},$tmp)=parse_patronyme($1,$2);
+				}
+				if ($datas =~ (/<\/a> → (\d+)$/)) { 
+					message INFO,"Implexe ! $1";
+					$implexe=$1;
 				}
 				$state=ST_DATE_NAISS; 
 				message TRACE,"-- $state Items n/p : $1 $2";
@@ -625,7 +631,9 @@ foreach my $li (<STDIN>) {
 
 				# Génération du CSV. Le SOSA est le premier cham, le nb_enfants le dernier.
 				# Tronçonné en morceaux pour la lisibilité du code.
-				add_line $sosa.";";
+				add_line $sosa;
+				add_line "==$implexe" if ($implexe);
+				add_line ";";
 				message DEBUG,"# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;an_naiss_lui;lieu_naiss_lui;";
 				foreach $k ('p', 'n') {
 					add_line "$items_a{$k};",DEBUG,$k.":".$items_a{$k};

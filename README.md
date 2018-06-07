@@ -22,7 +22,7 @@ Parseur de tableau généalogique geneweb vers un fichier CSV, prêt pour le ré
 - 1.3 : 30/05/18 : Change Switch module to given - switch limit - help page - debug dates & accents, Fix logical bug de logique for caps - unicode normalization on split/combined mode
 - 1.4 : 30/05/18 : Tree display
 - 1.5 : 31/05/18 : input/output files + curl handling
-- 1.6 : 07/06/18 : Add case normalisation switch and fix bug on patronym with dashes
+- 1.6 : 07/06/18 : Add case normalisation switch and fix bug on patronym with dashes, add implexes.
 
 ## Dependencies :
 
