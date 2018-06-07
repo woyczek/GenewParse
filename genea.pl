@@ -41,7 +41,7 @@ use Text::Unidecode qw(unidecode);
 use HTML::Entities qw(decode_entities);
 use Unicode::Normalize;
 
-use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
+use constant FORMAT		=> "SOSA;prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
 
 # State
 use constant ST_INTERLIGNE	=> 20;
@@ -618,7 +618,7 @@ foreach my $li (<STDIN>) {
 				# Et un hash de SOSA pointant vers le buffer.
 				message DEBUG,$line;
 			} else { # CSV ##############
-				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;année_naiss_elle;lieu_naiss_elle;jour_décès_elle;mois_décès_elle;année_décès_elle;lieu_décès_elle;métier_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
+				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;jour_décès_lui;mois_décès_lui;année_décès_lui;lieu_décès_lui;métier_lui;prénom_elle;nom_elle;jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant
 				# prénom_lui;nom_lui;jour_naiss_lui;mois_naiss_lui;année_naiss_lui;lieu_naiss_lui;
 				# SOSA ; Prenom ; Nom ; Dat ; Naiss ; Lui ; Lieu ; 
 				$line="";
@@ -638,20 +638,10 @@ foreach my $li (<STDIN>) {
 				add_line "$ld;";
 				add_line "$prof;";
 
-				message DEBUG,"# prénom_elle;nom_elle;jour_naiss_elle;mois_naiss_elle;an_naiss_elle;";
+				message DEBUG,"# prénom_elle;nom_elle;";
 				foreach $k ('p', 'n') {
 					add_line "$items_b{$k};",DEBUG,$k.":".$items_b{$k};
 				}
-				add_line ";;;";
-
-				message DEBUG, "# lieu_naiss_elle;";
-				add_line ";";
-
-				message DEBUG, "# jour_décès_elle;mois_décès_elle;an_décès_elle;lieu_décès_elle;";
-				add_line ";;;;";
-
-				message DEBUG,"# métier_elle";
-				add_line ";";
 
 				message DEBUG, "# jour_marr;mois_marr;année_marr;lieu_marr;nb_enfant";
 				message DEBUG, "$dm;$lm;$nbe";
