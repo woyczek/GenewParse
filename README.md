@@ -4,7 +4,7 @@ genea.pl - GenewParse
 
 # VERSION
 
-version 1.6
+version 1.7
 
 # SYNOPSYS
 
@@ -23,6 +23,7 @@ Parseur de tableau généalogique geneweb vers un fichier CSV, prêt pour le ré
 - 1.4 : 30/05/18 : Tree display
 - 1.5 : 31/05/18 : input/output files + curl handling
 - 1.6 : 07/06/18 : Add case normalisation switch and fix bug on patronym with dashes, add implexes.
+- 1.7 : 07/06/18 : Add title and ignore title switch
 
 ## Dependencies :
 
@@ -45,10 +46,11 @@ some housekeeping is done.
 # USAGE
 
 ```
-genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
         -v <LEVEL>  : with <LEVEL> value between 0 (quiet) et 6 (Xtra Trace)
         -s <SOSA>   : only process sosa <SOSA>
 	-N          : disable case normalization
+	-T          : disable title catching
         -t <LEVEL>  : Tree format display, by patronym branch, with <LEVEL> as maxdepth
         -i <INPUT>  : input file. If this flag is omitted, the parser will use STDIN
         -u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.

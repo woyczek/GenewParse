@@ -21,7 +21,12 @@ use experimental qw(smartmatch);
 # 1.4 : 30/05/18 : Ajout affichage en forme d'arbre
 # 1.5 : 31/05/18 : Ajout fichiers i/o + curl
 # 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization, add implexes
+# 1.7 : 07/06/18 : Add titles to tree view
 
+## TODO
+# Faire quelque chose des titres
+# Faire quelque chose des surnoms, alias, et autres grumeaux de patronyme
+# gérer les divers calendriers (actuellement, on délègue cela à l'import)
 
 #############################################
 # https://github.com/woyczek/GeneaParse.git #
@@ -33,8 +38,9 @@ use experimental qw(smartmatch);
 #      - Unicode::Normalize;
 #      - experimental;
 
-use constant VERSION 		=> "1.6";
+use constant VERSION 		=> "1.7";
 use constant COMMIT_ID 		=> '$Id$';
+use constant COMMIT_DATE        => '$Format:%ci$ - $Format %ar$ ($Format:%h$)';
 
 #use Switch; # deprecated
 #use DateTime::Calendar::FrenchRevolutionary;
@@ -78,6 +84,7 @@ my $SW_IN=0;
 my $SW_OUT=0;
 my $SW_CURL=0;
 my $SW_NORM=1;
+my $SW_TITRE=1;
 my $DISTANT_URL='';
 my $SOSA_LIMIT=0;
 my $DEBUG_LEVEL=CRIT;
@@ -354,14 +361,15 @@ sub print_sosa { # Affiche les efants et le n½ud courant ; récursif
 
 sub show_help { # Ben, help...
 	print STDERR "
-GenewParse Version ".VERSION." - ".$COMMIT_ID."
+GenewParse Version ".VERSION." - commit: ".COMMIT_ID." 
 
 Usage :
-genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
 	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
 	-s <SOSA>   : ne traite que le sosa <SOSA>
 	-t <LEVEL>  : affiche sous forme d'arbre, niveau <LEVEL> maximal
 	-N          : don't normalize case
+	-T          : don't catch titles
 	-i <INPUT>  : fichier en entrée. Si omis, utilisera STDIN
 	-u <URL>    : URL à télécharger en pré-traitement. Nécessite -i, le fichier sera écrasé
 	-o <OUTPUT> : output file. will use STDOUT if omitted.
@@ -386,7 +394,10 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 			$state=9 if $opt eq "-o";
 			show_help if $opt eq "-?";
 			show_help if $opt eq "-h";
-			if ($opt eq "-N") {
+			if ($opt eq "-T") {
+				$SW_TITRE=0;
+			}
+			elsif ($opt eq "-N") {
 				$SW_NORM=0;
 			}
 			elsif ($state == 0)
@@ -514,6 +525,7 @@ foreach my $li (<STDIN>) {
 		}
 		when (22) { # Principal
 			$implexe="";
+			$titre="";
 			$state=ST_INTERLIGNE if ($li =~ /^<\/tr>/);
 			next if ($SW_LIMIT and $SOSA_LIMIT!=$sosa);
 			if ($li =~ /^<td[^>]*>(.+)<\/td>/) {
@@ -521,7 +533,11 @@ foreach my $li (<STDIN>) {
 				if ($datas =~ (/<a href=".+\?(.+)">(.*)<\/a>/)) {
 					($items_a{p},$items_a{n},$tmp)=parse_patronyme($1,$2);
 				}
-				if ($datas =~ (/<\/a> → (\d+)$/)) { 
+				if ($datas =~ (/<\/a>.+<em>(.+)<\/em>/)) { 
+					message INFO,"Titre ! $1";
+					$titre=$1 if $SW_TITRE; # Don't catch it if disable by options
+				}
+				if ($datas =~ (/ → (\d+)$/)) { 
 					message INFO,"Implexe ! $1";
 					$implexe=$1;
 				}
@@ -615,7 +631,10 @@ foreach my $li (<STDIN>) {
 				$line="";
 				my $level=$sosa / 2;
 				add_line " " x get_gen($sosa) x 2 . " - $sosa - ";
-				add_line "$items_a{n} $items_a{p} ($dn à $ln / $dd à $ld) - $prof - $nbe enfants.";
+				add_line "$items_a{n} $items_a{p}";
+				add_line " \"$titre\" " if $titre;
+				add_line "($dn à $ln / $dd à $ld) - $prof - $nbe enfants.";
+				add_line " --> $implexe " if $implexe;
 
 				$line =~s/;\s+;/;;/g;
 				push @lines,$line;
