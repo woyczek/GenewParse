@@ -356,9 +356,9 @@ sub show_help { # Ben, help...
 GenewParse Version ".VERSION."
 
 Usage :
-genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
 	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
-	-l <SOSA>   : ne traite que le sosa <SOSA>
+	-s <SOSA>   : ne traite que le sosa <SOSA>
 	-t <LEVEL>  : affiche sous forme d'arbre, niveau <LEVEL> maximal
 	-N          : don't normalize case
 	-i <INPUT>  : fichier en entrée. Si omis, utilisera STDIN
@@ -378,7 +378,7 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 		message DEBUG, "Getopt $state - $opt";
 		when (0) { 
 			$state=2 if $opt eq "-v";
-			$state=4 if $opt eq "-l";
+			$state=4 if $opt eq "-s";
 			$state=6 if $opt eq "-t";
 			$state=7 if $opt eq "-u";
 			$state=8 if $opt eq "-i";

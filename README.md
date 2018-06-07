@@ -45,9 +45,9 @@ some housekeeping is done.
 # USAGE
 
 ```
-genea.pl [-v <LEVEL>] [-l <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
         -v <LEVEL>  : with <LEVEL> value between 0 (quiet) et 6 (Xtra Trace)
-        -l <SOSA>   : only process sosa <SOSA>
+        -s <SOSA>   : only process sosa <SOSA>
 	-N          : disable case normalization
         -t <LEVEL>  : Tree format display, by patronym branch, with <LEVEL> as maxdepth
         -i <INPUT>  : input file. If this flag is omitted, the parser will use STDIN
