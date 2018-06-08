@@ -361,18 +361,18 @@ sub print_sosa { # Affiche les efants et le n½ud courant ; récursif
 
 sub show_help { # Ben, help...
 	print STDERR "
-GenewParse Version ".VERSION." - commit: ".COMMIT_ID." 
+GenewParse version ".VERSION." - commit: ".COMMIT_ID." 
 
 Usage :
 genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
-	-v <LEVEL>  : avec <LEVEL> compris entre 0 (silencieux) et 6 (Xtra Trace)
-	-s <SOSA>   : ne traite que le sosa <SOSA>
-	-t <LEVEL>  : affiche sous forme d'arbre, niveau <LEVEL> maximal
-	-N          : don't normalize case
-	-T          : don't catch titles
-	-i <INPUT>  : fichier en entrée. Si omis, utilisera STDIN
-	-u <URL>    : URL à télécharger en pré-traitement. Nécessite -i, le fichier sera écrasé
-	-o <OUTPUT> : output file. will use STDOUT if omitted.
+	-v <LEVEL>  : With <LEVEL> value between 0 (quiet) and 6 (xtra trace).
+	-s <SOSA>   : Only process given Sosa number <SOSA>.
+	-N          : Disable case normalisation.
+	-T          : Disable title catching.
+	-t <LEVEL>  : Tree format display, by surname branches, with <LEVEL> as max depth.
+	-i <INPUT>  : Input file. If this flag is omitted, the parser will use STDIN.
+	-u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.
+	-o <OUTPUT> : Output file. If omitted, will use STDOUT.
 ";
 	exit;
 }
