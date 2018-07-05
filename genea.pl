@@ -536,11 +536,12 @@ foreach my $li (<STDIN>) {
 				}
 				if ($datas =~ (/<\/a>.+<em>(.+)<\/em>/)) { 
 					message INFO,"Titre ! $1";
-					$titre=$1 if $SW_TITRE; # Don't catch it if disable by options
+					$titre=$1 if $SW_TITRE; # Don't catch it if disabled by options
 				}
-				if ($datas =~ (/ → (\d+)$/)) { 
+				if ($datas =~ (/ → ([&nbsp;\d]+)$/)) { 
 					message INFO,"Implexe ! $1";
 					$implexe=$1;
+					$implexe=~s/[^\d]//g
 				}
 				$state=ST_DATE_NAISS; 
 				message TRACE,"-- $state Items n/p : $1 $2";
