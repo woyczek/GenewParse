@@ -24,6 +24,8 @@ Parser of tables of ancestors of GeneWeb to a CSV file.
 - 1.5 – 31/05/18: Input/output files + cURL handling.
 - 1.6 – 07/06/18: Add case normalisation switch and fix bugs on surnames with dashes, add implexes.
 - 1.7 – 07/06/18: Add title and ignore title switch.
+- 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed, fix multiple weddings, detect thousand separators for french language
+- 1.9 : 07/07/18 : Add mark all individual as dead option, add entities switch
 
 ## Dependencies :
 ### CPAN 
@@ -44,15 +46,17 @@ All surnames are set-up with the normalisation options you gave, the French Repu
 # USAGE
 
 ```
-genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-d] [-e] [-h|-?]
         -v <LEVEL>  : With <LEVEL> value between 0 (quiet) and 6 (xtra trace).
         -s <SOSA>   : Only process given Sosa number <SOSA>.
-	-N          : Disable case normalisation.
-	-T          : Disable title catching.
+        -N          : Disable case normalisation.
+        -T          : Disable title catching.
         -t <LEVEL>  : Tree format display, by surname branches, with <LEVEL> as max depth.
         -i <INPUT>  : Input file. If this flag is omitted, the parser will use STDIN.
         -u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.
         -o <OUTPUT> : Output file. If omitted, will use STDOUT.
+        -d          : Mark all individual as dead
+        -e          : Convert fields using urlencode and entities
 
 Be careful. The order of the switches is important, and cURL on <URL> is done immediately, before looking up at the other switches.
 ```

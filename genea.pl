@@ -24,7 +24,7 @@ use experimental qw(smartmatch);
 # 1.7 : 07/06/18 : Add titles to tree view
 # 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed, 
 #                  fix multiple weddings, detect thousand separators for french language
-# 1.9 : 07/07/18 : Add mark all individual as dead option
+# 1.9 : 07/07/18 : Add mark all individual as dead option, add entities switch
 
 ## TODO
 # Faire quelque chose des titres
@@ -82,6 +82,7 @@ my $last_sosa=0;
 
 my $SW_LIMIT=0;
 my $SW_DEBUG=0;
+my $SW_ENTITIES=0;
 my $SW_TREE=0;
 my $SW_MARKDEAD=0;
 my $SW_IN=0;
@@ -109,7 +110,11 @@ sub add_line { # Concatenation de donnees en une ligne (vers CSV)
 	my ($tmp_line,$alert_level,$message)=@_;
 	message ($alert_level,$message) if $message;
 	# Nettoyage du HTML
-	$line.=decode_entities($tmp_line);
+	if ($SW_ENTITIES) {
+		$line.=urlize(decode_entities($tmp_line));
+	} else {
+		$line.=decode_entities($tmp_line);
+	}
 	#$line.=unidecode(decode_entities($tmp_line));
 }
 
@@ -117,6 +122,13 @@ sub un_urlize { # Conversion URL_ENCODE vers ANSI classique
 	my ($rv) = @_;
 	$rv =~ s/\+/ /g;
 	$rv =~ s/%(..)/pack("c",hex($1))/ge;
+	return $rv;
+}
+
+sub urlize { # Conversion URL_ENCODE vers ANSI classique
+	my ($rv) = @_;
+    	$rv =~ s/([^;A-Za-z0-9-])/sprintf("%%%02X", ord($1))/seg;
+	$rv =~ s/ /+/g;
 	return $rv;
 }
 
@@ -130,7 +142,7 @@ sub parse_date { # Conversion URL_ENCODE vers ANSI classique, nettoyage, découp
 	my $periode=''; my $comm='';
 	my $jour='';my $mois='';my $an='';
 
-	return '+' if ($date_in =~ /\+/);
+	return ';;+' if ($date_in =~ /\+/);
 
 	# Précision, date, calendrier
 	if ($date_in =~ / ([^ ]+\/[^ ]+) /) {
@@ -370,7 +382,7 @@ sub show_help { # Ben, help...
 GenewParse version ".VERSION." - commit: ".COMMIT_ID." 
 
 Usage :
-genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-d] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-d] [-e] [-h|-?]
 	-v <LEVEL>  : With <LEVEL> value between 0 (quiet) and 6 (xtra trace).
 	-s <SOSA>   : Only process given Sosa number <SOSA>.
 	-N          : Disable case normalisation.
@@ -380,6 +392,7 @@ genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] 
 	-u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.
 	-o <OUTPUT> : Output file. If omitted, will use STDOUT.
         -d          : Mark all individual as dead
+        -e          : Convert fields using urlencode and entities
 ";
 	exit;
 }
@@ -406,6 +419,9 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 			}
 			elsif ($opt eq "-N") {
 				$SW_NORM=0;
+			}
+			elsif ($opt eq "-e") {
+				$SW_ENTITIES=1;
 			}
 			elsif ($opt eq "-d") {
 				$SW_MARKDEAD=1;
