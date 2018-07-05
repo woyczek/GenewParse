@@ -22,6 +22,7 @@ use experimental qw(smartmatch);
 # 1.5 : 31/05/18 : Ajout fichiers i/o + curl
 # 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization, add implexes
 # 1.7 : 07/06/18 : Add titles to tree view
+# 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed
 
 ## TODO
 # Faire quelque chose des titres
@@ -38,7 +39,7 @@ use experimental qw(smartmatch);
 #      - Unicode::Normalize;
 #      - experimental;
 
-use constant VERSION 		=> "1.7";
+use constant VERSION 		=> "1.8";
 use constant COMMIT_ID 		=> '$Id$';
 use constant COMMIT_DATE        => '$Format:%ci$ - $Format %ar$ ($Format:%h$)';
 
@@ -232,7 +233,7 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 	my ($url,$patronyme)=@_;
 	my $prenom="",$nom="",$surname="";
 	my %items;
-	my $is_diacritic;
+	my $is_diacritic; # Extended to match any non word character
 	my $is_tiret;
 
 	# Récupération selon les variables URL
@@ -257,7 +258,7 @@ sub parse_patronyme { # Decoupage du patronyme en tronçons, selon les paramètr
 
 	# Suppression des diacritiques dans la chaine HTML dans la temporaire
 	# et Remplacement des tirets et élisions par des espaces
-	$is_diacritic=($tmp_patro =~ s/[\pM]//g);
+	$is_diacritic=($tmp_patro =~ s/[\pM],\*«»//g);
 	$is_tiret=($tmp_patro =~ s/$RE_CAR_SEP/ /g);
 	if ($is_diacritic || $is_tiret || (!$SW_NORM) ) {
 		# \p{M} or \p{Mark}: a character intended to be combined with another character (e.g. accents, umlauts, enclosing boxes, etc.). 
