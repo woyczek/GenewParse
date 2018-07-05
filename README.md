@@ -1,65 +1,61 @@
 # NAME
 
-genea.pl - GenewParse
+GenewParse – genea.pl
 
 # VERSION
 
-version 1.7
+Version 1.7
 
-# SYNOPSYS
+# SYNOPSIS
 
-Parseur de tableau généalogique geneweb vers un fichier CSV, prêt pour le réimport.
+Parser of tables of ancestors of GeneWeb to a CSV file.
 
-## License : GPL
+## Licence : GPL
 
 ## Changelog
 
-- 0.8 : 28/05/18 : Early debug
-- 0.9 : 28/05/18 : First CSV output
-- 1.0 : 29/05/18 : Formalisation, constants, dates bugfix, first versioned release
-- 1.1 : 29/05/18 : Multiple verboses, date precision handling improvement
-- 1.2 : 29/05/18 : Return back to initial CSV format, revolutionnary calendar dates handling, add precision on année, uppercase ; diacritics handling.
-- 1.3 : 30/05/18 : Change Switch module to given - switch limit - help page - debug dates & accents, Fix logical bug de logique for caps - unicode normalization on split/combined mode
-- 1.4 : 30/05/18 : Tree display
-- 1.5 : 31/05/18 : input/output files + curl handling
-- 1.6 : 07/06/18 : Add case normalisation switch and fix bug on patronym with dashes, add implexes.
-- 1.7 : 07/06/18 : Add title and ignore title switch
+- 0.8 – 28/05/18: Early debug.
+- 0.9 – 28/05/18: First CSV output.
+- 1.0 – 29/05/18: Formalisation, constants, dates bugfix, first versioned release.
+- 1.1 – 29/05/18: Multiple verbose, date precision handling improvement.
+- 1.2 – 29/05/18: Return back to initial CSV format, French Revolutionary Calendar dates handling, add precision on year, uppercase ; diacritics handling.
+- 1.3 – 30/05/18: Change Switch module to given - switch limit - help page - debug dates & accents, fix logic for capitalisation - Unicode normalisation on split/combined mode.
+- 1.4 – 30/05/18: Tree display.
+- 1.5 – 31/05/18: Input/output files + cURL handling.
+- 1.6 – 07/06/18: Add case normalisation switch and fix bugs on surnames with dashes, add implexes.
+- 1.7 – 07/06/18: Add title and ignore title switch.
 
 ## Dependencies :
-
 ### CPAN 
-
 - ```Text::Unidecode qw(unidecode);```
 - ```HTML::Entities qw(decode_entities);```
 - ```Unicode::Normalize;```
 
-Install them with "cpan -i Text::Unidecode qw(unidecode) HTML::Entities qw(decode_entities) Unicode::Normalize"
+Install them with:
+```
+cpan -i Text::Unidecode qw(unidecode) HTML::Entities qw(decode_entities) Unicode::Normalize
+```
 
 # DESCRIPTION
+The goal of this parser is to fetch a cURL result on URL of any GeneWeb version prior to 7.0, and transform it in CSV with normalisation ability.
 
-The goal of this parser is to fetch a curl result on URL of any geneweb version prior to 7.0, and transform it in
-CSV with normalization ability.
-
-All patronyms are set-up with the normalization options you gave, the french republican dates ar transformed, and
-some housekeeping is done.
+All surnames are set-up with the normalisation options you gave, the French Republican dates are transformed, and some housekeeping is done.
 
 # USAGE
 
 ```
 genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
-        -v <LEVEL>  : with <LEVEL> value between 0 (quiet) et 6 (Xtra Trace)
-        -s <SOSA>   : only process sosa <SOSA>
-	-N          : disable case normalization
-	-T          : disable title catching
-        -t <LEVEL>  : Tree format display, by patronym branch, with <LEVEL> as maxdepth
-        -i <INPUT>  : input file. If this flag is omitted, the parser will use STDIN
+        -v <LEVEL>  : With <LEVEL> value between 0 (quiet) and 6 (xtra trace).
+        -s <SOSA>   : Only process given Sosa number <SOSA>.
+	-N          : Disable case normalisation.
+	-T          : Disable title catching.
+        -t <LEVEL>  : Tree format display, by surname branches, with <LEVEL> as max depth.
+        -i <INPUT>  : Input file. If this flag is omitted, the parser will use STDIN.
         -u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.
         -o <OUTPUT> : Output file. If omitted, will use STDOUT.
 
-Be careful. The order of the switches is important, and CURL on <URL> is done immediately, before looking up at the other switches.
-
+Be careful. The order of the switches is important, and cURL on <URL> is done immediately, before looking up at the other switches.
 ```
-
 
 Verbose levels:
 - XTRACE  => 6,
@@ -69,4 +65,3 @@ Verbose levels:
 - WARN    => 2,
 - ERR     => 1,
 - CRIT    => 0
-
