@@ -22,7 +22,8 @@ use experimental qw(smartmatch);
 # 1.5 : 31/05/18 : Ajout fichiers i/o + curl
 # 1.6 : 07/06/18 : Fix accents on first name, add switch to ignore case normalization, add implexes
 # 1.7 : 07/06/18 : Add titles to tree view
-# 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed
+# 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed, 
+#                  fix multiple weddings, detect thousand separators for french language
 
 ## TODO
 # Faire quelque chose des titres
@@ -687,6 +688,9 @@ foreach my $li (<STDIN>) {
 			# au risque de rater un individu
 			if ($li =~ /^<tr>/) { 
 				$state=201; 
+				message WARN, "$sosa - Fin de ligne manquée, rattrapage."} 
+			elsif ($li =~ /^<tr dontbreak="1">/) { 
+				$state=205; 
 				message WARN, "$sosa - Fin de ligne manquée, rattrapage."} 
 			else { 
 				$state=ST_INTERLIGNE 
