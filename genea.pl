@@ -24,6 +24,7 @@ use experimental qw(smartmatch);
 # 1.7 : 07/06/18 : Add titles to tree view
 # 1.8 : 07/07/18 : Add lots of forbidden chars in diacritic list to be removed, 
 #                  fix multiple weddings, detect thousand separators for french language
+# 1.9 : 07/07/18 : Add mark all individual as dead option
 
 ## TODO
 # Faire quelque chose des titres
@@ -40,7 +41,7 @@ use experimental qw(smartmatch);
 #      - Unicode::Normalize;
 #      - experimental;
 
-use constant VERSION 		=> "1.8";
+use constant VERSION 		=> "1.9 chainsaw";
 use constant COMMIT_ID 		=> '$Id$';
 use constant COMMIT_DATE        => '$Format:%ci$ - $Format %ar$ ($Format:%h$)';
 
@@ -82,6 +83,7 @@ my $last_sosa=0;
 my $SW_LIMIT=0;
 my $SW_DEBUG=0;
 my $SW_TREE=0;
+my $SW_MARKDEAD=0;
 my $SW_IN=0;
 my $SW_OUT=0;
 my $SW_CURL=0;
@@ -127,6 +129,8 @@ sub parse_date { # Conversion URL_ENCODE vers ANSI classique, nettoyage, découp
 	my $date='';
 	my $periode=''; my $comm='';
 	my $jour='';my $mois='';my $an='';
+
+	return '+' if ($date_in =~ /\+/);
 
 	# Précision, date, calendrier
 	if ($date_in =~ / ([^ ]+\/[^ ]+) /) {
@@ -366,7 +370,7 @@ sub show_help { # Ben, help...
 GenewParse version ".VERSION." - commit: ".COMMIT_ID." 
 
 Usage :
-genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-h|-?]
+genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] ] [-o <OUTPUT>] [-d] [-h|-?]
 	-v <LEVEL>  : With <LEVEL> value between 0 (quiet) and 6 (xtra trace).
 	-s <SOSA>   : Only process given Sosa number <SOSA>.
 	-N          : Disable case normalisation.
@@ -375,6 +379,7 @@ genea.pl [-v <LEVEL>] [-s <SOSA>] [-t <LEVEL>] [-T] [-N] [-i <INPUT> [-u <URL>] 
 	-i <INPUT>  : Input file. If this flag is omitted, the parser will use STDIN.
 	-u <URL>    : URL to fetch and save to INPUT file, before processing this file. -i is mandatory, the file will be replaced.
 	-o <OUTPUT> : Output file. If omitted, will use STDOUT.
+        -d          : Mark all individual as dead
 ";
 	exit;
 }
@@ -401,6 +406,10 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 			}
 			elsif ($opt eq "-N") {
 				$SW_NORM=0;
+			}
+			elsif ($opt eq "-d") {
+				$SW_MARKDEAD=1;
+				message DEBUG, "Mark all undead as dead";
 			}
 			elsif ($state == 0)
 			{ 
@@ -460,7 +469,8 @@ foreach my $opt (@ARGV){ # Récupération et traitement des paramètres en ligne
 
 $state=0;
 
-message DEBUG, "Options : $SW_LIMIT : $SOSA_LIMIT - $SW_DEBUG : $DEBUG_LEVEL";
+message DEBUG, "Options : SW_LIMIT : SOSA_LIMIT - SW_DEBUG : DEBUG_LEVEL - SW_MARKDEAD";
+message DEBUG, "Options : $SW_LIMIT : $SOSA_LIMIT - $SW_DEBUG : $DEBUG_LEVEL - $SW_MARKDEAD";
 
 # Automate à états, sur $state.
 # Pour chaque paramètre en argument, un tour d'automate.
@@ -664,6 +674,9 @@ foreach my $li (<STDIN>) {
 				add_line "$ln;",DEBUG,"ln:$ln";
 
 				message DEBUG,"# periode_décès_lui;date_décès_lui;lieu_décès_lui;métier_lui;";
+				$dd="" if $dd eq '&nbsp;';
+				$dd="+" if (not (($items_a{p} eq '') or ($items_a{n} eq '')) and $SW_MARKDEAD and $dd eq '');
+				message TRACE,"+ $dd - $SW_MARKDEAD ".($items_a{p} eq '' or $items_a{n} eq '');
 				add_line parse_date($dd).";",DEBUG,"dd:$dd";
 				add_line "$ld;";
 				add_line "$prof;";
