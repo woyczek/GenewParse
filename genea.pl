@@ -127,7 +127,8 @@ sub un_urlize { # Conversion URL_ENCODE vers ANSI classique
 
 sub urlize { # Conversion URL_ENCODE vers ANSI classique
 	my ($rv) = @_;
-    	$rv =~ s/([^;A-Za-z0-9-])/sprintf("%%%02X", ord($1))/seg;
+	$rv =~ s/\s/ /g;
+    	$rv =~ s/([^ ;A-Za-z0-9-])/sprintf("%%%02X", ord($1))/seg;
 	$rv =~ s/ /+/g;
 	return $rv;
 }
